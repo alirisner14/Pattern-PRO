@@ -24,3 +24,25 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.checkerboard-light {
+  background-color: #ffffff;
+  background-image: conic-gradient(
+    #e4e4e7 90deg,
+    transparent 90deg 180deg,
+    #e4e4e7 180deg 270deg,
+    transparent 270deg
+  );
+  background-size: 20px 20px;
+}
+
+.checkerboard-dark {
+  background-color: #18181b;
+  background-image: conic-gradient(
+    #3f3f46 90deg,
+    transparent 90deg 180deg,
+    #3f3f46 180deg 270deg,
+    transparent 270deg
+  );
+  background-size: 20px 20px;
+}
