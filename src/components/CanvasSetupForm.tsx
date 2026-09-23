@@ -5,7 +5,6 @@ import {
   DEFAULT_DPI,
   UNIT_OPTIONS,
   buildCanvasConfig,
-  needsDpi,
   type CanvasConfig,
   type Unit,
 } from "@/lib/units";
@@ -21,8 +20,6 @@ export default function CanvasSetupForm({ onCreate }: CanvasSetupFormProps) {
   const [dpi, setDpi] = useState(String(DEFAULT_DPI));
   const [error, setError] = useState<string | null>(null);
 
-  const showDpi = needsDpi(unit);
-
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
@@ -34,13 +31,13 @@ export default function CanvasSetupForm({ onCreate }: CanvasSetupFormProps) {
       setError("Width and height must be positive numbers.");
       return;
     }
-    if (showDpi && (!Number.isFinite(d) || d <= 0)) {
+    if (!Number.isFinite(d) || d <= 0) {
       setError("DPI must be a positive number.");
       return;
     }
 
     setError(null);
-    onCreate(buildCanvasConfig(w, h, unit, showDpi ? d : DEFAULT_DPI));
+    onCreate(buildCanvasConfig(w, h, unit, d));
   }
 
   return (
@@ -98,20 +95,21 @@ export default function CanvasSetupForm({ onCreate }: CanvasSetupFormProps) {
           </select>
         </label>
 
-        {showDpi && (
-          <label className="mt-3 flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
-            DPI / PPI
-            <input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              step="1"
-              value={dpi}
-              onChange={(e) => setDpi(e.target.value)}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
-            />
-          </label>
-        )}
+        <label className="mt-3 flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+          DPI / PPI
+          <input
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step="1"
+            value={dpi}
+            onChange={(e) => setDpi(e.target.value)}
+            className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+          />
+        </label>
+        <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+          Used to convert to pixels, and embedded in the exported PNG.
+        </p>
 
         {error && (
           <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>

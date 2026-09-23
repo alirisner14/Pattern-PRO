@@ -2,15 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import { UNIT_OPTIONS, type CanvasConfig } from "@/lib/units";
+import type { PlacedElement } from "@/lib/layout/types";
 
 interface WorkspaceProps {
   config: CanvasConfig;
+  elements: PlacedElement[];
   onReset: () => void;
 }
 
 type PreviewTheme = "light" | "dark";
 
-export default function Workspace({ config, onReset }: WorkspaceProps) {
+export default function Workspace({ config, elements, onReset }: WorkspaceProps) {
   const [theme, setTheme] = useState<PreviewTheme>("light");
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
@@ -39,7 +41,7 @@ export default function Workspace({ config, onReset }: WorkspaceProps) {
   const unitLabel = UNIT_OPTIONS.find((o) => o.value === config.unit)?.label ?? config.unit;
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
         <div className="flex items-center gap-3">
           <button
@@ -49,13 +51,7 @@ export default function Workspace({ config, onReset }: WorkspaceProps) {
             ← New Canvas
           </button>
           <div className="text-sm text-zinc-500 dark:text-zinc-400">
-            {config.rawWidth} × {config.rawHeight} {unitLabel}
-            {config.unit !== "px" && (
-              <>
-                {" "}@ {config.dpi} DPI →{" "}
-              </>
-            )}
-            {config.unit === "px" && " → "}
+            {config.rawWidth} × {config.rawHeight} {unitLabel} @ {config.dpi} DPI →{" "}
             <span className="font-medium text-zinc-700 dark:text-zinc-300">
               {config.widthPx} × {config.heightPx} px
             </span>
@@ -93,7 +89,7 @@ export default function Workspace({ config, onReset }: WorkspaceProps) {
 
       <div
         ref={containerRef}
-        className="flex flex-1 items-center justify-center overflow-hidden p-6"
+        className="flex flex-1 min-h-0 items-center justify-center overflow-hidden p-6"
       >
         <div
           style={{
@@ -101,10 +97,41 @@ export default function Workspace({ config, onReset }: WorkspaceProps) {
             height: config.heightPx,
             transform: `scale(${scale})`,
           }}
-          className={`shrink-0 border border-zinc-400/60 dark:border-zinc-600/60 ${
+          className={`relative shrink-0 border border-zinc-400/60 dark:border-zinc-600/60 ${
             theme === "light" ? "checkerboard-light" : "checkerboard-dark"
           }`}
-        />
+        >
+          <svg
+            width={config.widthPx}
+            height={config.heightPx}
+            viewBox={`0 0 ${config.widthPx} ${config.heightPx}`}
+            className="absolute inset-0"
+          >
+            {elements.map((el) => (
+              <g key={el.id}>
+                <circle
+                  cx={el.x}
+                  cy={el.y}
+                  r={el.radius}
+                  fill="none"
+                  stroke={el.color}
+                  strokeWidth={Math.max(1.5, el.radius * 0.05)}
+                />
+                <text
+                  x={el.x}
+                  y={el.y}
+                  fill={el.color}
+                  fontSize={el.radius * 0.55}
+                  fontFamily="ui-sans-serif, system-ui, sans-serif"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                >
+                  {el.label}
+                </text>
+              </g>
+            ))}
+          </svg>
+        </div>
       </div>
     </div>
   );

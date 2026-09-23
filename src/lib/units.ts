@@ -8,24 +8,14 @@ export const UNIT_OPTIONS: { value: Unit; label: string }[] = [
   { value: "in", label: "Inches (in)" },
 ];
 
-const PHYSICAL_UNITS: ReadonlySet<Unit> = new Set(["in", "cm", "mm"]);
-
-export function needsDpi(unit: Unit): boolean {
-  return PHYSICAL_UNITS.has(unit);
-}
-
 export const DEFAULT_DPI = 300;
-
-// Screen/CSS reference density used for on-screen units (px, pt) — independent
-// of the print DPI, which only applies to the physical units below.
-const CSS_PIXELS_PER_INCH = 96;
 
 export function toPixels(value: number, unit: Unit, dpi: number): number {
   switch (unit) {
     case "px":
       return value;
     case "pt":
-      return value * (CSS_PIXELS_PER_INCH / 72);
+      return (value / 72) * dpi;
     case "in":
       return value * dpi;
     case "cm":
