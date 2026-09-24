@@ -1,71 +1,77 @@
 import { latticeDistance, torusDistance, wrap, type DistanceFn, type Vec } from "./geometry";
 import type { Rng } from "./rng";
+import { diamondTranslations, type ShapeModel } from "../shapes/shapes";
+import { pointInPolygon, polygonArea, signedDistance } from "../shapes/polygon";
 
 // Where a layout lives and how its edges repeat.
 export interface Domain {
   dist: DistanceFn;
   area: number;
-  // A point where both seams meet (canvas corner / diamond vertex).
-  seamCorner: Vec;
-  // One segment per distinct seam (opposite edges are the same seam).
-  seams: { start: Vec; along: Vec }[];
+  // Where the seams meet, and points along each distinct seam. Null/empty
+  // when the region doesn't repeat edge to edge (nothing crosses its edge).
+  seamCorner: Vec | null;
+  seamSides: Vec[][];
+  // Room before a circle would leave the region; absent when it wraps.
+  bound?: (p: Vec) => number;
   sample: (rng: Rng) => Vec;
   normalize: (p: Vec) => Vec;
 }
+
+const SEAM_SAMPLES = 64;
 
 export function rectDomain(width: number, height: number): Domain {
   return {
     dist: torusDistance(width, height),
     area: width * height,
     seamCorner: { x: 0, y: 0 },
-    seams: [
-      { start: { x: 0, y: 0 }, along: { x: 0, y: height } },
-      { start: { x: 0, y: 0 }, along: { x: width, y: 0 } },
+    seamSides: [
+      Array.from({ length: SEAM_SAMPLES + 1 }, (_, k) => ({ x: 0, y: (k * height) / SEAM_SAMPLES })),
+      Array.from({ length: SEAM_SAMPLES + 1 }, (_, k) => ({ x: (k * width) / SEAM_SAMPLES, y: 0 })),
     ],
     sample: (rng) => ({ x: rng() * width, y: rng() * height }),
     normalize: (p) => ({ x: wrap(p.x, width), y: wrap(p.y, height) }),
   };
 }
 
-// 0 at the centre, 1 on the diamond's outline.
-export function diamondNorm(p: Vec, width: number, height: number): number {
-  return Math.abs(p.x - width / 2) / (width / 2) + Math.abs(p.y - height / 2) / (height / 2);
+function sampleInside(poly: Vec[], width: number, height: number, rng: Rng): Vec {
+  for (let attempt = 0; attempt < 10000; attempt++) {
+    const p = { x: rng() * width, y: rng() * height };
+    if (pointInPolygon(p, poly)) return p;
+  }
+  return { x: width / 2, y: height / 2 };
 }
 
-// Offsetting copies of the diamond by half the canvas diagonally is what
-// makes the Diamond Method seamless: whatever leaves one edge of the
-// diamond re-enters through the opposite edge.
-export function diamondTranslations(width: number, height: number): [Vec, Vec] {
-  return [
-    { x: width / 2, y: height / 2 },
-    { x: width / 2, y: -height / 2 },
-  ];
-}
+export function shapeDomain(shape: ShapeModel, width: number, height: number): Domain {
+  const { region } = shape;
+  const sample = (rng: Rng) => sampleInside(region, width, height, rng);
 
-export function diamondDomain(width: number, height: number): Domain {
-  const [t1, t2] = diamondTranslations(width, height);
-  return {
-    dist: latticeDistance(t1, t2),
-    area: (width * height) / 2,
-    seamCorner: { x: width / 2, y: 0 },
-    seams: [
-      { start: { x: 0, y: height / 2 }, along: t2 },
-      { start: { x: width / 2, y: 0 }, along: t1 },
-    ],
-    sample: (rng) => {
-      for (;;) {
-        const p = { x: rng() * width, y: rng() * height };
-        if (diamondNorm(p, width, height) <= 1) return p;
-      }
-    },
-    normalize: (p) => {
-      for (let i = -2; i <= 2; i++) {
-        for (let j = -2; j <= 2; j++) {
-          const q = { x: p.x + i * t1.x + j * t2.x, y: p.y + i * t1.y + j * t2.y };
-          if (diamondNorm(q, width, height) <= 1) return q;
+  if (shape.regionTiles) {
+    const [t1, t2] = diamondTranslations(width, height);
+    return {
+      dist: latticeDistance(t1, t2),
+      area: polygonArea(region),
+      seamCorner: shape.seamCorner,
+      seamSides: shape.seamSides,
+      sample,
+      normalize: (p) => {
+        for (let i = -2; i <= 2; i++) {
+          for (let j = -2; j <= 2; j++) {
+            const q = { x: p.x + i * t1.x + j * t2.x, y: p.y + i * t1.y + j * t2.y };
+            if (pointInPolygon(q, region)) return q;
+          }
         }
-      }
-      return p;
-    },
+        return p;
+      },
+    };
+  }
+
+  return {
+    dist: torusDistance(width, height),
+    area: Math.min(width * height, polygonArea(region)),
+    seamCorner: null,
+    seamSides: [],
+    bound: (p) => signedDistance(p, region),
+    sample,
+    normalize: (p) => ({ x: wrap(p.x, width), y: wrap(p.y, height) }),
   };
 }

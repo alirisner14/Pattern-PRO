@@ -2,20 +2,26 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { UNIT_OPTIONS, type CanvasConfig } from "@/lib/units";
-import { renderCircles, type Shape } from "@/lib/layout/edgeRepeats";
+import { renderCircles, type CircleFrame } from "@/lib/layout/edgeRepeats";
+import { polygonPoints } from "@/lib/shapes/polygon";
+import type { ShapeModel } from "@/lib/shapes/shapes";
 import type { PlacedElement } from "@/lib/layout/types";
 
 interface WorkspaceProps {
   config: CanvasConfig;
   elements: PlacedElement[];
-  shape: Shape;
+  shape: ShapeModel | null;
+  outlinePx: number;
   showEdgeRepeats: boolean;
   onReset: () => void;
 }
 
 type PreviewTheme = "light" | "dark";
 
-const DIAMOND_CLIP_ID = "pattern-diamond-clip";
+const SHAPE_CLIP_ID = "pattern-shape-clip";
+const SHADE_MASK_ID = "pattern-shade-mask";
+// 70% lightness: marks everything outside the shape as "don't draw here".
+const SHADE = "#b3b3b3";
 
 // Spacing between dots on a dotted outline, adjusted so a whole number of
 // dots fits the circumference and there's no uneven seam where it closes.
@@ -28,18 +34,20 @@ export default function Workspace({
   config,
   elements,
   shape,
+  outlinePx,
   showEdgeRepeats,
   onReset,
 }: WorkspaceProps) {
   const [theme, setTheme] = useState<PreviewTheme>("light");
-  const circles = useMemo(
-    () => renderCircles(elements, config.widthPx, config.heightPx, showEdgeRepeats, shape),
-    [elements, config.widthPx, config.heightPx, showEdgeRepeats, shape]
-  );
+  const circles = useMemo(() => {
+    const frame: CircleFrame = shape?.regionTiles
+      ? { kind: "tile", polygon: shape.region }
+      : { kind: "rect" };
+    return renderCircles(elements, config.widthPx, config.heightPx, showEdgeRepeats, frame);
+  }, [elements, config.widthPx, config.heightPx, showEdgeRepeats, shape]);
   const strokeWidth = Math.max(3, Math.min(config.widthPx, config.heightPx) * 0.0035);
   const w = config.widthPx;
   const h = config.heightPx;
-  const diamondPoints = `${w / 2},0 ${w},${h / 2} ${w / 2},${h} 0,${h / 2}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
 
@@ -134,22 +142,46 @@ export default function Workspace({
             className="absolute inset-0"
             style={{ overflow: "hidden" }}
           >
-            {shape === "diamond" && (
+            {shape && (
               <>
                 <defs>
-                  <clipPath id={DIAMOND_CLIP_ID}>
-                    <polygon points={diamondPoints} />
+                  <mask id={SHADE_MASK_ID}>
+                    <rect width={w} height={h} fill="#fff" />
+                    {shape.copies.map((poly, i) => (
+                      <polygon key={i} points={polygonPoints(poly)} fill="#000" />
+                    ))}
+                  </mask>
+                  <clipPath id={SHAPE_CLIP_ID}>
+                    {shape.copies.map((poly, i) => (
+                      <polygon key={i} points={polygonPoints(poly)} />
+                    ))}
                   </clipPath>
                 </defs>
-                <polygon
-                  points={diamondPoints}
-                  fill="none"
-                  stroke="#71717a"
-                  strokeWidth={strokeWidth}
-                />
+                <rect width={w} height={h} fill={SHADE} mask={`url(#${SHADE_MASK_ID})`} />
+                {outlinePx > 0 &&
+                  shape.copies.map((poly, i) => (
+                    <polygon
+                      key={`outline-${i}`}
+                      points={polygonPoints(poly)}
+                      fill="none"
+                      stroke="#000"
+                      strokeWidth={outlinePx}
+                      strokeLinejoin="round"
+                    />
+                  ))}
+                {shape.inner.map((poly, i) => (
+                  <polygon
+                    key={`inner-${i}`}
+                    points={polygonPoints(poly)}
+                    fill="none"
+                    stroke="#000"
+                    strokeWidth={Math.max(1, outlinePx)}
+                    strokeLinejoin="round"
+                  />
+                ))}
               </>
             )}
-            <g clipPath={shape === "diamond" ? `url(#${DIAMOND_CLIP_ID})` : undefined}>
+            <g clipPath={shape ? `url(#${SHAPE_CLIP_ID})` : undefined}>
             {circles.map((c) => (
               <g key={c.key} opacity={c.split ? 0.5 : 1}>
                 <circle

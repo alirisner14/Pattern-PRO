@@ -1,5 +1,7 @@
 export type ElementClass = "hero" | "secondary" | "filler";
-export type RepeatStyle = "grid" | "scattered" | "half-drop" | "brick" | "diamond";
+import type { ShapeFit, ShapeModel, ShapeSides } from "../shapes/shapes";
+
+export type RepeatStyle = "grid" | "scattered" | "half-drop" | "brick" | "diamond" | "ogee";
 
 export interface ElementClassConfig {
   count: number;
@@ -15,6 +17,8 @@ export interface LayoutParams {
   hero: ElementClassConfig;
   secondary: ElementClassConfig;
   filler: ElementClassConfig;
+  // Diamond/Ogee: the layout goes inside this shape.
+  shape?: ShapeModel;
 }
 
 export interface PlacedElement {
@@ -42,4 +46,10 @@ export interface PatternSettings {
   fillerCount: number;
   showEdgeRepeats: boolean;
   showShapeLayout: boolean;
+  diamondSides: ShapeSides;
+  shapeFit: ShapeFit;
+  outlinePx: number;
+  openAmount: number;
+  innerCount: number;
+  innerSpacing: number;
 }

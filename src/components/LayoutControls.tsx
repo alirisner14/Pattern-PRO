@@ -4,6 +4,7 @@ import RepeatStylePictograph from "@/components/RepeatStylePictograph";
 import { DEFAULT_CLASS_COLORS } from "@/lib/layout/constants";
 import type { TierColors } from "@/lib/colorPrefs";
 import type { PatternSettings, RepeatStyle } from "@/lib/layout/types";
+import type { ShapeFit, ShapeSides } from "@/lib/shapes/shapes";
 
 const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
   { value: "grid", label: "Grid" },
@@ -11,7 +12,114 @@ const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
   { value: "half-drop", label: "Half-Drop" },
   { value: "brick", label: "Brick" },
   { value: "diamond", label: "Diamond" },
+  { value: "ogee", label: "Ogee" },
 ];
+
+type SetSetting = <K extends keyof PatternSettings>(key: K, next: PatternSettings[K]) => void;
+
+const selectClass =
+  "rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50";
+
+function ShapeControls({ value, set }: { value: PatternSettings; set: SetSetting }) {
+  const isDiamond = value.repeatStyle === "diamond";
+  const hasFit = isDiamond && value.diamondSides !== "straight";
+  const isOpen = hasFit && value.shapeFit === "open";
+
+  return (
+    <div className="flex flex-col gap-3">
+      <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Shape</h2>
+
+      {isDiamond && (
+        <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">
+          Sides
+          <select
+            value={value.diamondSides}
+            onChange={(e) => set("diamondSides", e.target.value as ShapeSides)}
+            className={selectClass}
+          >
+            <option value="straight">Straight</option>
+            <option value="concave">Concave</option>
+            <option value="convex">Convex</option>
+          </select>
+        </label>
+      )}
+
+      {hasFit && (
+        <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">
+          Fit
+          <select
+            value={value.shapeFit}
+            onChange={(e) => set("shapeFit", e.target.value as ShapeFit)}
+            className={selectClass}
+          >
+            <option value="closed">Closed</option>
+            <option value="open">Open</option>
+          </select>
+        </label>
+      )}
+
+      <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+        <span className="flex justify-between">
+          {isOpen ? "Open amount" : "Outline thickness"}
+          <span className="text-xs text-zinc-400 dark:text-zinc-500">
+            {isOpen ? `${value.openAmount}%` : value.outlinePx ? `${value.outlinePx}px` : "none"}
+          </span>
+        </span>
+        <input
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={isOpen ? value.openAmount : value.outlinePx}
+          onChange={(e) => set(isOpen ? "openAmount" : "outlinePx", Number(e.target.value))}
+        />
+      </label>
+
+      <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">
+        Inner shapes
+        <input
+          type="number"
+          min={0}
+          max={8}
+          step={1}
+          value={value.innerCount}
+          onChange={(e) =>
+            set("innerCount", Math.min(8, Math.max(0, Math.round(Number(e.target.value) || 0))))
+          }
+          className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-right text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+        />
+      </label>
+
+      {value.innerCount > 0 && (
+        <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
+          <span className="flex justify-between">
+            Inner spacing
+            <span className="text-xs text-zinc-400 dark:text-zinc-500">
+              {Math.round(value.innerSpacing * 100)}%
+            </span>
+          </span>
+          <input
+            type="range"
+            min={0.03}
+            max={0.2}
+            step={0.01}
+            value={value.innerSpacing}
+            onChange={(e) => set("innerSpacing", Number(e.target.value))}
+          />
+        </label>
+      )}
+
+      <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+        <input
+          type="checkbox"
+          checked={value.showShapeLayout}
+          onChange={(e) => set("showShapeLayout", e.target.checked)}
+        />
+        Layout inside shape
+      </label>
+    </div>
+  );
+}
 
 interface LayoutControlsProps {
   value: PatternSettings;
@@ -40,6 +148,8 @@ export default function LayoutControls({
     onChange({ ...value, [key]: next });
   }
 
+  const isShape = value.repeatStyle === "diamond" || value.repeatStyle === "ogee";
+
   return (
     <aside className="flex w-72 shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-200 p-4 dark:border-zinc-800">
       <div>
@@ -61,26 +171,10 @@ export default function LayoutControls({
               {opt.label}
             </button>
           ))}
-          <button
-            disabled
-            title="Coming soon"
-            className="flex cursor-not-allowed flex-col items-center gap-1 rounded-md border border-dashed border-zinc-200 p-2 text-xs text-zinc-400 dark:border-zinc-700 dark:text-zinc-600"
-          >
-            <RepeatStylePictograph style="ogee" />
-            Ogee · soon
-          </button>
         </div>
-        {value.repeatStyle === "diamond" && (
-          <label className="mt-3 flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-            <input
-              type="checkbox"
-              checked={value.showShapeLayout}
-              onChange={(e) => set("showShapeLayout", e.target.checked)}
-            />
-            Layout inside shape
-          </label>
-        )}
       </div>
+
+      {isShape && <ShapeControls value={value} set={set} />}
 
       <div>
         <div className="flex items-baseline justify-between">

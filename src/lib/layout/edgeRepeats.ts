@@ -1,8 +1,7 @@
-import { diamondNorm, diamondTranslations } from "./domain";
 import type { Vec } from "./geometry";
 import type { PlacedElement } from "./types";
-
-export type Shape = "rect" | "diamond";
+import { diamondTranslations } from "../shapes/shapes";
+import { signedDistance } from "../shapes/polygon";
 
 export interface RenderedCircle {
   key: string;
@@ -49,23 +48,35 @@ function rectGeometry(width: number, height: number): ShapeGeometry {
   };
 }
 
-function diamondGeometry(width: number, height: number): ShapeGeometry {
-  const a = width / 2;
-  const b = height / 2;
-  // Distance from the centre to each side, per unit of diamond "norm".
-  const apothem = (a * b) / Math.hypot(a, b);
+function tileGeometry(polygon: Vec[], width: number, height: number): ShapeGeometry {
+  const centre = { x: width / 2, y: height / 2 };
+  const inset = (p: Vec) => signedDistance(p, polygon);
+  const toward = (p: Vec, s: number) => ({
+    x: p.x + s * (centre.x - p.x),
+    y: p.y + s * (centre.y - p.y),
+  });
   return {
     translations: diamondTranslations(width, height),
-    inset: (p) => (1 - diamondNorm(p, width, height)) * apothem,
-    // The norm shrinks linearly toward the centre, so walking straight in
-    // reaches the required margin at a closed-form fraction of the way.
+    inset,
+    // Walk from the fragment's centre toward the shape's centre until the
+    // point sits at least `pad` inside the outline.
     labelPoint: (p, pad) => {
-      const k = diamondNorm(p, width, height);
-      const s = k > 0 ? clamp(1 - (1 - pad / apothem) / k, 0, 1) : 0;
-      return { x: p.x + s * (a - p.x), y: p.y + s * (b - p.y) };
+      if (inset(p) >= pad) return p;
+      let lo = 0;
+      let hi = 1;
+      for (let k = 0; k < 24; k++) {
+        const mid = (lo + hi) / 2;
+        if (inset(toward(p, mid)) >= pad) hi = mid;
+        else lo = mid;
+      }
+      return toward(p, hi);
     },
   };
 }
+
+// Rect: the canvas edges repeat. Tile: a shape that repeats edge to edge on
+// the diamond lattice, so its own outline is the seam.
+export type CircleFrame = { kind: "rect" } | { kind: "tile"; polygon: Vec[] };
 
 // Every visible fragment of every circle — including the clones that wrap
 // onto the opposite edge(s) — with its label pulled into the visible part so
@@ -75,9 +86,12 @@ export function renderCircles(
   width: number,
   height: number,
   showEdgeRepeats: boolean,
-  shape: Shape
+  frame: CircleFrame
 ): RenderedCircle[] {
-  const geo = shape === "diamond" ? diamondGeometry(width, height) : rectGeometry(width, height);
+  const geo =
+    frame.kind === "tile"
+      ? tileGeometry(frame.polygon, width, height)
+      : rectGeometry(width, height);
   const [t1, t2] = geo.translations;
   const out: RenderedCircle[] = [];
 

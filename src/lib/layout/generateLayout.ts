@@ -8,8 +8,9 @@ import {
   type DistanceFn,
   type Vec,
 } from "./geometry";
-import { diamondDomain, rectDomain, type Domain } from "./domain";
-import { fillGaps } from "./packing";
+import { rectDomain, shapeDomain, type Domain } from "./domain";
+import { signedDistance } from "../shapes/polygon";
+import { fillGaps, roomAt } from "./packing";
 import { RADIUS_RATIO } from "./constants";
 import type { ElementClass, LayoutParams, LayoutResult, PlacedElement } from "./types";
 
@@ -31,6 +32,7 @@ const SCATTER_SAMPLES_PER_ANCHOR = 60;
 // A middle tier left uncapped can swallow every gap and leave the smallest
 // tier with nowhere to go, so it gets at most this many per anchor.
 const MIDDLE_TIER_PER_ANCHOR = 1.25;
+const INRADIUS_SHARE = 0.5;
 
 interface Instance extends Circle {
   cls: ElementClass;
@@ -142,12 +144,11 @@ function pinSeams(
     }
   };
 
-  pin(() => domain.seamCorner, pickTier());
-  for (const seam of domain.seams) {
-    pin(() => {
-      const t = 0.2 + 0.6 * rng();
-      return { x: seam.start.x + t * seam.along.x, y: seam.start.y + t * seam.along.y };
-    }, pickTier());
+  const corner = domain.seamCorner;
+  if (!corner) return pins;
+  pin(() => corner, pickTier());
+  for (const seam of domain.seamSides) {
+    pin(() => seam[Math.floor((0.2 + 0.6 * rng()) * (seam.length - 1))], pickTier());
   }
   return pins;
 }
@@ -164,7 +165,7 @@ function scatteredInstances(
   gap: number,
   rng: Rng
 ): Instance[] {
-  const { dist, normalize } = domain;
+  const { dist, normalize, bound } = domain;
   const anchorCls = active[0];
   const rA = radiusOf(anchorCls);
   const maxJitter = SCATTER_JITTER * spacing;
@@ -183,6 +184,7 @@ function scatteredInstances(
     step,
     maxCount: Math.max(0, anchorCount - pinned(anchorCls)),
     centre: false,
+    bound,
   });
   const anchors: Circle[] = spread.map((p) => ({ ...p, r: rA }));
 
@@ -196,7 +198,7 @@ function scatteredInstances(
       const angle = rng() * Math.PI * 2;
       const d = maxJitter * Math.sqrt(rng());
       const q = normalize({ x: a.x + Math.cos(angle) * d, y: a.y + Math.sin(angle) * d });
-      if (clearance(q, others, dist) >= rA + gap) {
+      if (roomAt(q, others, dist, bound) >= rA + gap) {
         anchors[k] = { ...q, r: rA };
         break;
       }
@@ -212,7 +214,7 @@ function scatteredInstances(
       i < rest.length - 1
         ? Math.max(0, Math.round(MIDDLE_TIER_PER_ANCHOR * anchorCount) - pinned(cls))
         : Infinity;
-    for (const p of fillGaps({ candidates, placed, radius: r, gap, dist, step, maxCount })) {
+    for (const p of fillGaps({ candidates, placed, radius: r, gap, dist, step, maxCount, bound })) {
       out.push({ ...normalize(p), r, cls });
     }
   });
@@ -259,16 +261,25 @@ export function generateLayout(params: LayoutParams): LayoutResult {
 
   const rng = mulberry32(seed);
   const target = anchorCountForDensity(density);
-  const isDiamond = repeatStyle === "diamond";
-  const isFree = isDiamond || repeatStyle === "scattered";
-  const domain = isDiamond ? diamondDomain(width, height) : rectDomain(width, height);
+  const { shape } = params;
+  const isFree = !!shape || repeatStyle === "scattered";
+  const domain = shape ? shapeDomain(shape, width, height) : rectDomain(width, height);
   const lattice = isFree ? null : buildLattice(width, height, repeatStyle, target);
-  // The diamond holds half the canvas area, so it gets half the anchors;
-  // spacing is area-per-anchor either way, so circle sizes match the grids.
-  const anchorCount = isDiamond ? Math.max(1, Math.round(target / 2)) : target;
+  // A shape gets anchors in proportion to its share of the canvas; spacing
+  // is area-per-anchor either way, so circle sizes match the grids.
+  const anchorCount = shape
+    ? Math.max(1, Math.round((target * domain.area) / (width * height)))
+    : target;
   const spacing = lattice ? lattice.spacing : Math.sqrt(domain.area / anchorCount);
 
-  const anchorRadius = ANCHOR_RADIUS * spacing;
+  // Narrow shapes (a concave diamond's arms) can't hold full-size circles,
+  // so cap the anchor at half the shape's inner radius and let the smaller
+  // tiers reach into the thin parts.
+  const inradius =
+    shape && !shape.regionTiles
+      ? signedDistance({ x: width / 2, y: height / 2 }, shape.region)
+      : Infinity;
+  const anchorRadius = Math.min(ANCHOR_RADIUS * spacing, INRADIUS_SHARE * inradius);
   const radiusOf: RadiusOf = (cls) =>
     (anchorRadius * RADIUS_RATIO[cls]) / RADIUS_RATIO[active[0]];
   const gap = GAP * spacing;

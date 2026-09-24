@@ -9,7 +9,7 @@ const SCATTER_NUDGE = [
   [-3, 2], [2, -3], [-1, 3], [3, 1], [-2, -2], [1, 3], [3, -2], [-3, -1], [2, 2],
 ];
 
-export default function RepeatStylePictograph({ style }: { style: RepeatStyle | "ogee" }) {
+export default function RepeatStylePictograph({ style }: { style: RepeatStyle }) {
   if (style === "ogee") {
     return (
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-9 w-9" fill="none">

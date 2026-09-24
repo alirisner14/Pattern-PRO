@@ -7,6 +7,7 @@ import { generateLayout } from "@/lib/layout/generateLayout";
 import { DEFAULT_CLASS_COLORS } from "@/lib/layout/constants";
 import { randomSeed } from "@/lib/layout/rng";
 import { loadTierColors, saveTierColors, type TierColors } from "@/lib/colorPrefs";
+import { buildShape } from "@/lib/shapes/shapes";
 import type { CanvasConfig } from "@/lib/units";
 import type { PatternSettings } from "@/lib/layout/types";
 
@@ -23,6 +24,12 @@ const DEFAULT_SETTINGS: PatternSettings = {
   fillerCount: 4,
   showEdgeRepeats: true,
   showShapeLayout: true,
+  diamondSides: "straight",
+  shapeFit: "closed",
+  outlinePx: 0,
+  openAmount: 25,
+  innerCount: 0,
+  innerSpacing: 0.08,
 };
 
 export default function PatternEditor({ canvasConfig, onReset }: PatternEditorProps) {
@@ -30,18 +37,54 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
   const [seed, setSeed] = useState(randomSeed);
   const [colors, setColors] = useState<TierColors>(loadTierColors);
 
+  const { widthPx, heightPx } = canvasConfig;
+  const { repeatStyle, diamondSides, shapeFit, openAmount, innerCount, innerSpacing } = settings;
+  const isShape = repeatStyle === "diamond" || repeatStyle === "ogee";
+  const isOpen = repeatStyle === "diamond" && diamondSides !== "straight" && shapeFit === "open";
+
+  const shape = useMemo(
+    () =>
+      isShape
+        ? buildShape(
+            {
+              kind: repeatStyle === "ogee" ? "ogee" : "diamond",
+              sides: diamondSides,
+              fit: shapeFit,
+              openAmount,
+              innerCount,
+              innerSpacing,
+            },
+            widthPx,
+            heightPx
+          )
+        : null,
+    [isShape, repeatStyle, diamondSides, shapeFit, openAmount, innerCount, innerSpacing, widthPx, heightPx]
+  );
+
   const layout = useMemo(
     () =>
       generateLayout({
-        widthPx: canvasConfig.widthPx,
-        heightPx: canvasConfig.heightPx,
-        repeatStyle: settings.repeatStyle,
+        widthPx,
+        heightPx,
+        repeatStyle,
         density: settings.density,
         seed,
         hero: { count: settings.heroCount, color: DEFAULT_CLASS_COLORS.hero },
         secondary: { count: settings.secondaryCount, color: DEFAULT_CLASS_COLORS.secondary },
-        filler: { count: settings.fillerCount, color: DEFAULT_CLASS_COLORS.filler },      }),
-    [canvasConfig.widthPx, canvasConfig.heightPx, settings, seed]
+        filler: { count: settings.fillerCount, color: DEFAULT_CLASS_COLORS.filler },
+        shape: shape ?? undefined,
+      }),
+    [
+      widthPx,
+      heightPx,
+      repeatStyle,
+      settings.density,
+      settings.heroCount,
+      settings.secondaryCount,
+      settings.fillerCount,
+      seed,
+      shape,
+    ]
   );
 
   // Colors are applied after layout so dragging a color picker doesn't
@@ -56,8 +99,6 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
     saveTierColors(next);
   }
 
-  const isDiamond = settings.repeatStyle === "diamond";
-
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
       <LayoutControls
@@ -71,8 +112,9 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
       />
       <Workspace
         config={canvasConfig}
-        elements={isDiamond && !settings.showShapeLayout ? [] : elements}
-        shape={isDiamond ? "diamond" : "rect"}
+        elements={isShape && !settings.showShapeLayout ? [] : elements}
+        shape={shape}
+        outlinePx={isOpen ? 0 : settings.outlinePx}
         showEdgeRepeats={settings.showEdgeRepeats}
         onReset={onReset}
       />
