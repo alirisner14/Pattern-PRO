@@ -1,6 +1,8 @@
 "use client";
 
 import RepeatStylePictograph from "@/components/RepeatStylePictograph";
+import { DEFAULT_CLASS_COLORS } from "@/lib/layout/constants";
+import type { TierColors } from "@/lib/colorPrefs";
 import type { PatternSettings, RepeatStyle } from "@/lib/layout/types";
 
 const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
@@ -15,6 +17,8 @@ interface LayoutControlsProps {
   value: PatternSettings;
   placementCount: number;
   warnings: string[];
+  colors: TierColors;
+  onColorsChange: (next: TierColors) => void;
   onChange: (next: PatternSettings) => void;
   onRebuild: () => void;
 }
@@ -23,9 +27,15 @@ export default function LayoutControls({
   value,
   placementCount,
   warnings,
+  colors,
+  onColorsChange,
   onChange,
   onRebuild,
 }: LayoutControlsProps) {
+  const customColors = (Object.keys(colors) as (keyof TierColors)[]).some(
+    (cls) => colors[cls].toLowerCase() !== DEFAULT_CLASS_COLORS[cls]
+  );
+
   function set<K extends keyof PatternSettings>(key: K, next: PatternSettings[K]) {
     onChange({ ...value, [key]: next });
   }
@@ -108,21 +118,35 @@ export default function LayoutControls({
             Distinct motifs per tier. Density sets how often they repeat.
           </p>
         </div>
-        <CountField
+        <TierRow
           label="Hero (1)"
-          value={value.heroCount}
-          onChange={(v) => set("heroCount", v)}
+          count={value.heroCount}
+          onCountChange={(v) => set("heroCount", v)}
+          color={colors.hero}
+          onColorChange={(c) => onColorsChange({ ...colors, hero: c })}
         />
-        <CountField
+        <TierRow
           label="Secondary (2)"
-          value={value.secondaryCount}
-          onChange={(v) => set("secondaryCount", v)}
+          count={value.secondaryCount}
+          onCountChange={(v) => set("secondaryCount", v)}
+          color={colors.secondary}
+          onColorChange={(c) => onColorsChange({ ...colors, secondary: c })}
         />
-        <CountField
+        <TierRow
           label="Filler (3)"
-          value={value.fillerCount}
-          onChange={(v) => set("fillerCount", v)}
+          count={value.fillerCount}
+          onCountChange={(v) => set("fillerCount", v)}
+          color={colors.filler}
+          onColorChange={(c) => onColorsChange({ ...colors, filler: c })}
         />
+        {customColors && (
+          <button
+            onClick={() => onColorsChange({ ...DEFAULT_CLASS_COLORS })}
+            className="self-start text-xs text-zinc-500 underline hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+          >
+            Reset colors to default
+          </button>
+        )}
         {warnings.map((w) => (
           <p key={w} className="text-xs text-amber-600 dark:text-amber-400">
             {w}
@@ -140,26 +164,38 @@ export default function LayoutControls({
   );
 }
 
-function CountField({
+function TierRow({
   label,
-  value,
-  onChange,
+  count,
+  onCountChange,
+  color,
+  onColorChange,
 }: {
   label: string;
-  value: number;
-  onChange: (v: number) => void;
+  count: number;
+  onCountChange: (v: number) => void;
+  color: string;
+  onColorChange: (c: string) => void;
 }) {
   return (
-    <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">
-      {label}
+    <div className="flex items-center justify-between gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+      <span className="flex-1">{label}</span>
+      <input
+        type="color"
+        aria-label={`${label} color`}
+        value={color}
+        onChange={(e) => onColorChange(e.target.value)}
+        className="h-7 w-9 cursor-pointer rounded border border-zinc-300 bg-transparent p-0.5 dark:border-zinc-700"
+      />
       <input
         type="number"
+        aria-label={`${label} motif count`}
         min={0}
         step={1}
-        value={value}
-        onChange={(e) => onChange(Math.max(0, Math.round(Number(e.target.value) || 0)))}
-        className="w-20 rounded-md border border-zinc-300 bg-white px-2 py-1 text-right text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
+        value={count}
+        onChange={(e) => onCountChange(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+        className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-right text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
       />
-    </label>
+    </div>
   );
 }

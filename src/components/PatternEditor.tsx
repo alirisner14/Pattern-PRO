@@ -6,6 +6,7 @@ import LayoutControls from "@/components/LayoutControls";
 import { generateLayout } from "@/lib/layout/generateLayout";
 import { DEFAULT_CLASS_COLORS } from "@/lib/layout/constants";
 import { randomSeed } from "@/lib/layout/rng";
+import { loadTierColors, saveTierColors, type TierColors } from "@/lib/colorPrefs";
 import type { CanvasConfig } from "@/lib/units";
 import type { PatternSettings } from "@/lib/layout/types";
 
@@ -27,6 +28,7 @@ const DEFAULT_SETTINGS: PatternSettings = {
 export default function PatternEditor({ canvasConfig, onReset }: PatternEditorProps) {
   const [settings, setSettings] = useState<PatternSettings>(DEFAULT_SETTINGS);
   const [seed, setSeed] = useState(randomSeed);
+  const [colors, setColors] = useState<TierColors>(loadTierColors);
 
   const layout = useMemo(
     () =>
@@ -38,10 +40,21 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
         seed,
         hero: { count: settings.heroCount, color: DEFAULT_CLASS_COLORS.hero },
         secondary: { count: settings.secondaryCount, color: DEFAULT_CLASS_COLORS.secondary },
-        filler: { count: settings.fillerCount, color: DEFAULT_CLASS_COLORS.filler },
-      }),
+        filler: { count: settings.fillerCount, color: DEFAULT_CLASS_COLORS.filler },      }),
     [canvasConfig.widthPx, canvasConfig.heightPx, settings, seed]
   );
+
+  // Colors are applied after layout so dragging a color picker doesn't
+  // re-run the whole layout on every tick.
+  const elements = useMemo(
+    () => layout.elements.map((el) => ({ ...el, color: colors[el.class] })),
+    [layout.elements, colors]
+  );
+
+  function changeColors(next: TierColors) {
+    setColors(next);
+    saveTierColors(next);
+  }
 
   const isDiamond = settings.repeatStyle === "diamond";
 
@@ -51,12 +64,14 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
         value={settings}
         placementCount={layout.elements.length}
         warnings={layout.warnings}
+        colors={colors}
+        onColorsChange={changeColors}
         onChange={setSettings}
         onRebuild={() => setSeed(randomSeed())}
       />
       <Workspace
         config={canvasConfig}
-        elements={isDiamond && !settings.showShapeLayout ? [] : layout.elements}
+        elements={isDiamond && !settings.showShapeLayout ? [] : elements}
         shape={isDiamond ? "diamond" : "rect"}
         showEdgeRepeats={settings.showEdgeRepeats}
         onReset={onReset}
