@@ -7,7 +7,7 @@ import { generateLayout } from "@/lib/layout/generateLayout";
 import { DEFAULT_CLASS_COLORS } from "@/lib/layout/constants";
 import { randomSeed } from "@/lib/layout/rng";
 import { loadTierColors, saveTierColors, type TierColors } from "@/lib/colorPrefs";
-import { buildShape } from "@/lib/shapes/shapes";
+import { buildShape, shapeTiles } from "@/lib/shapes/shapes";
 import type { CanvasConfig } from "@/lib/units";
 import type { PatternSettings } from "@/lib/layout/types";
 
@@ -51,7 +51,14 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
     innerSpacing,
   } = settings;
   const isShape = repeatStyle === "diamond" || repeatStyle === "ogee";
-  const isOpen = repeatStyle === "diamond" && diamondSides !== "straight" && shapeFit === "open";
+  const isOpen =
+    isShape &&
+    shapeFit === "open" &&
+    !shapeTiles({
+      kind: repeatStyle === "ogee" ? "ogee" : "diamond",
+      sides: diamondSides,
+      ogeeStyle,
+    });
 
   const shape = useMemo(
     () =>

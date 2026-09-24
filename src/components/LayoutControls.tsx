@@ -5,7 +5,13 @@ import { DEFAULT_CLASS_COLORS } from "@/lib/layout/constants";
 import type { TierColors } from "@/lib/colorPrefs";
 import type { PatternSettings, RepeatStyle } from "@/lib/layout/types";
 import OgeeVariantIcon from "@/components/OgeeVariantIcon";
-import type { OgeeCurve, OgeeStyle, ShapeFit, ShapeSides } from "@/lib/shapes/shapes";
+import {
+  shapeTiles,
+  type OgeeCurve,
+  type OgeeStyle,
+  type ShapeFit,
+  type ShapeSides,
+} from "@/lib/shapes/shapes";
 
 const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
   { value: "grid", label: "Grid" },
@@ -18,8 +24,10 @@ const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
 
 const OGEE_STYLES: { value: OgeeStyle; label: string }[] = [
   { value: "standard", label: "Standard" },
-  { value: "faceted", label: "Faceted" },
   { value: "lantern", label: "Lantern" },
+  { value: "quatrefoil", label: "Quatrefoil" },
+  { value: "drop", label: "Drop" },
+  { value: "star", label: "Star" },
 ];
 
 type SetSetting = <K extends keyof PatternSettings>(key: K, next: PatternSettings[K]) => void;
@@ -29,7 +37,11 @@ const selectClass =
 
 function ShapeControls({ value, set }: { value: PatternSettings; set: SetSetting }) {
   const isDiamond = value.repeatStyle === "diamond";
-  const hasFit = isDiamond && value.diamondSides !== "straight";
+  const hasFit = !shapeTiles({
+    kind: isDiamond ? "diamond" : "ogee",
+    sides: value.diamondSides,
+    ogeeStyle: value.ogeeStyle,
+  });
   const isOpen = hasFit && value.shapeFit === "open";
 
   return (
