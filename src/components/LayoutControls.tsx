@@ -4,7 +4,8 @@ import RepeatStylePictograph from "@/components/RepeatStylePictograph";
 import { DEFAULT_CLASS_COLORS } from "@/lib/layout/constants";
 import type { TierColors } from "@/lib/colorPrefs";
 import type { PatternSettings, RepeatStyle } from "@/lib/layout/types";
-import type { ShapeFit, ShapeSides } from "@/lib/shapes/shapes";
+import OgeeVariantIcon from "@/components/OgeeVariantIcon";
+import type { OgeeCurve, OgeeStyle, ShapeFit, ShapeSides } from "@/lib/shapes/shapes";
 
 const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
   { value: "grid", label: "Grid" },
@@ -13,6 +14,12 @@ const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
   { value: "brick", label: "Brick" },
   { value: "diamond", label: "Diamond" },
   { value: "ogee", label: "Ogee" },
+];
+
+const OGEE_STYLES: { value: OgeeStyle; label: string }[] = [
+  { value: "standard", label: "Standard" },
+  { value: "faceted", label: "Faceted" },
+  { value: "lantern", label: "Lantern" },
 ];
 
 type SetSetting = <K extends keyof PatternSettings>(key: K, next: PatternSettings[K]) => void;
@@ -28,6 +35,39 @@ function ShapeControls({ value, set }: { value: PatternSettings; set: SetSetting
   return (
     <div className="flex flex-col gap-3">
       <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Shape</h2>
+
+      {!isDiamond && (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            {OGEE_STYLES.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => set("ogeeStyle", opt.value)}
+                className={`flex flex-col items-center gap-1 rounded-md border p-2 text-xs transition-colors ${
+                  value.ogeeStyle === opt.value
+                    ? "border-zinc-900 bg-zinc-100 text-zinc-900 dark:border-zinc-50 dark:bg-zinc-800 dark:text-zinc-50"
+                    : "border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
+                }`}
+              >
+                <OgeeVariantIcon style={opt.value} curve={value.ogeeCurve} />
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">
+            Curve
+            <select
+              value={value.ogeeCurve}
+              onChange={(e) => set("ogeeCurve", e.target.value as OgeeCurve)}
+              className={selectClass}
+            >
+              <option value="subtle">Subtle</option>
+              <option value="medium">Medium</option>
+              <option value="deep">Deep</option>
+            </select>
+          </label>
+        </>
+      )}
 
       {isDiamond && (
         <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">

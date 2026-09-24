@@ -26,6 +26,8 @@ const DEFAULT_SETTINGS: PatternSettings = {
   showShapeLayout: true,
   diamondSides: "straight",
   shapeFit: "closed",
+  ogeeStyle: "standard",
+  ogeeCurve: "medium",
   outlinePx: 0,
   openAmount: 25,
   innerCount: 0,
@@ -38,7 +40,16 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
   const [colors, setColors] = useState<TierColors>(loadTierColors);
 
   const { widthPx, heightPx } = canvasConfig;
-  const { repeatStyle, diamondSides, shapeFit, openAmount, innerCount, innerSpacing } = settings;
+  const {
+    repeatStyle,
+    diamondSides,
+    shapeFit,
+    ogeeStyle,
+    ogeeCurve,
+    openAmount,
+    innerCount,
+    innerSpacing,
+  } = settings;
   const isShape = repeatStyle === "diamond" || repeatStyle === "ogee";
   const isOpen = repeatStyle === "diamond" && diamondSides !== "straight" && shapeFit === "open";
 
@@ -50,6 +61,8 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
               kind: repeatStyle === "ogee" ? "ogee" : "diamond",
               sides: diamondSides,
               fit: shapeFit,
+              ogeeStyle,
+              ogeeCurve,
               openAmount,
               innerCount,
               innerSpacing,
@@ -58,7 +71,19 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
             heightPx
           )
         : null,
-    [isShape, repeatStyle, diamondSides, shapeFit, openAmount, innerCount, innerSpacing, widthPx, heightPx]
+    [
+      isShape,
+      repeatStyle,
+      diamondSides,
+      shapeFit,
+      ogeeStyle,
+      ogeeCurve,
+      openAmount,
+      innerCount,
+      innerSpacing,
+      widthPx,
+      heightPx,
+    ]
   );
 
   const layout = useMemo(
