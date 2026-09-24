@@ -154,20 +154,18 @@ export default function Workspace({
                   strokeWidth={strokeWidth}
                   strokeDasharray={c.dashed ? `${strokeWidth * 4} ${strokeWidth * 3}` : undefined}
                 />
-                {c.showLabel && (
-                  <text
-                    x={c.labelX}
-                    y={c.labelY}
-                    fill={c.color}
-                    fontSize={c.fontSize}
-                    fontWeight={600}
-                    fontFamily="ui-sans-serif, system-ui, sans-serif"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                  >
-                    {c.label}
-                  </text>
-                )}
+                <text
+                  x={c.labelX}
+                  y={c.labelY}
+                  fill={c.color}
+                  fontSize={c.fontSize}
+                  fontWeight={600}
+                  fontFamily="ui-sans-serif, system-ui, sans-serif"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                >
+                  {c.label}
+                </text>
               </g>
             ))}
             </g>

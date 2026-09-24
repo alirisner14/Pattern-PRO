@@ -14,7 +14,6 @@ export interface RenderedCircle {
   labelX: number;
   labelY: number;
   fontSize: number;
-  showLabel: boolean;
   dashed: boolean;
 }
 
@@ -90,8 +89,9 @@ export function renderCircles(
         const c = { x: el.x + i * t1.x + j * t2.x, y: el.y + i * t1.y + j * t2.y };
         if (!isOriginal && geo.inset(c) <= -el.radius) continue;
 
-        // Thin fragments can't fit a full-size label, so try smaller before
-        // giving up — every visible piece should still say what it is.
+        // Every visible piece must say what it is. Shrink the label until it
+        // fits inside the fragment; if even the smallest won't, it sits just
+        // outside the sliver (still inside the canvas) — usability over looks.
         let fontSize = fullSize;
         let label = geo.labelPoint(c, fontSize * 0.9);
         let fits = Math.hypot(label.x - c.x, label.y - c.y) <= el.radius - fontSize * 0.6;
@@ -112,7 +112,6 @@ export function renderCircles(
           labelX: label.x,
           labelY: label.y,
           fontSize,
-          showLabel: fits,
           dashed: crossesEdge,
         });
       }
