@@ -17,6 +17,13 @@ type PreviewTheme = "light" | "dark";
 
 const DIAMOND_CLIP_ID = "pattern-diamond-clip";
 
+// Spacing between dots on a dotted outline, adjusted so a whole number of
+// dots fits the circumference and there's no uneven seam where it closes.
+function dotGap(r: number, dotSize: number): number {
+  const circumference = 2 * Math.PI * r;
+  return circumference / Math.max(8, Math.round(circumference / (dotSize * 2.6)));
+}
+
 export default function Workspace({
   config,
   elements,
@@ -29,7 +36,7 @@ export default function Workspace({
     () => renderCircles(elements, config.widthPx, config.heightPx, showEdgeRepeats, shape),
     [elements, config.widthPx, config.heightPx, showEdgeRepeats, shape]
   );
-  const strokeWidth = Math.max(2, Math.min(config.widthPx, config.heightPx) * 0.0025);
+  const strokeWidth = Math.max(3, Math.min(config.widthPx, config.heightPx) * 0.0035);
   const w = config.widthPx;
   const h = config.heightPx;
   const diamondPoints = `${w / 2},0 ${w},${h / 2} ${w / 2},${h} 0,${h / 2}`;
@@ -144,7 +151,7 @@ export default function Workspace({
             )}
             <g clipPath={shape === "diamond" ? `url(#${DIAMOND_CLIP_ID})` : undefined}>
             {circles.map((c) => (
-              <g key={c.key}>
+              <g key={c.key} opacity={c.split ? 0.5 : 1}>
                 <circle
                   cx={c.cx}
                   cy={c.cy}
@@ -152,8 +159,10 @@ export default function Workspace({
                   fill="none"
                   stroke={c.color}
                   strokeWidth={strokeWidth}
-                  strokeDasharray={c.dashed ? `${strokeWidth * 4} ${strokeWidth * 3}` : undefined}
+                  strokeLinecap="round"
+                  strokeDasharray={`0 ${dotGap(c.r, strokeWidth)}`}
                 />
+                <circle cx={c.dotX} cy={c.dotY} r={strokeWidth * 0.8} fill="#000" />
                 <text
                   x={c.labelX}
                   y={c.labelY}

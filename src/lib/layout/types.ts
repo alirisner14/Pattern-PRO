@@ -25,6 +25,8 @@ export interface PlacedElement {
   y: number;
   radius: number;
   color: string;
+  // Direction of the indicator dot, in degrees clockwise from 3 o'clock.
+  angle: number;
 }
 
 export interface LayoutResult {

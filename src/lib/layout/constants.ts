@@ -1,9 +1,9 @@
 import type { ElementClass } from "./types";
 
 export const DEFAULT_CLASS_COLORS: Record<ElementClass, string> = {
-  hero: "#e11d48",
-  secondary: "#2563eb",
-  filler: "#16a34a",
+  hero: "#ff2e93",
+  secondary: "#00c2b8",
+  filler: "#8b3dff",
 };
 
 // Circle size of each tier relative to the Hero tier.

@@ -14,7 +14,11 @@ export interface RenderedCircle {
   labelX: number;
   labelY: number;
   fontSize: number;
-  dashed: boolean;
+  split: boolean;
+  // Indicator dot on the perimeter. Each piece of a split circle carries it
+  // at the same relative spot, so exactly one visible piece shows it.
+  dotX: number;
+  dotY: number;
 }
 
 const OFFSETS = [-1, 0, 1];
@@ -112,7 +116,9 @@ export function renderCircles(
           labelX: label.x,
           labelY: label.y,
           fontSize,
-          dashed: crossesEdge,
+          split: crossesEdge,
+          dotX: c.x + el.radius * Math.cos((el.angle * Math.PI) / 180),
+          dotY: c.y + el.radius * Math.sin((el.angle * Math.PI) / 180),
         });
       }
     }

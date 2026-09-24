@@ -299,6 +299,8 @@ export function generateLayout(params: LayoutParams): LayoutResult {
         y: m.y,
         radius: m.r,
         color: configs[cls].color,
+        // Tossed layouts get random orientations; structured ones all point up.
+        angle: isFree ? rng() * 360 : -90,
       });
     });
   }
