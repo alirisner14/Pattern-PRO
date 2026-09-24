@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS: PatternSettings = {
   secondaryCount: 3,
   fillerCount: 4,
   showEdgeRepeats: true,
+  showShapeLayout: true,
 };
 
 export default function PatternEditor({ canvasConfig, onReset }: PatternEditorProps) {
@@ -42,17 +43,21 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
     [canvasConfig.widthPx, canvasConfig.heightPx, settings, seed]
   );
 
+  const isDiamond = settings.repeatStyle === "diamond";
+
   return (
     <div className="flex flex-1 min-h-0 overflow-hidden">
       <LayoutControls
         value={settings}
+        placementCount={layout.elements.length}
         warnings={layout.warnings}
         onChange={setSettings}
         onRebuild={() => setSeed(randomSeed())}
       />
       <Workspace
         config={canvasConfig}
-        elements={layout.elements}
+        elements={isDiamond && !settings.showShapeLayout ? [] : layout.elements}
+        shape={isDiamond ? "diamond" : "rect"}
         showEdgeRepeats={settings.showEdgeRepeats}
         onReset={onReset}
       />

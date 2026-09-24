@@ -22,6 +22,17 @@ export default function RepeatStylePictograph({ style }: { style: RepeatStyle | 
     );
   }
 
+  if (style === "diamond") {
+    return (
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-9 w-9" fill="none">
+        <polygon points="20,4 36,20 20,36 4,20" className="stroke-current" strokeWidth={2} />
+        <circle cx={20} cy={14} r={2.5} className="fill-current" />
+        <circle cx={14} cy={22} r={2.5} className="fill-current" />
+        <circle cx={25} cy={25} r={2.5} className="fill-current" />
+      </svg>
+    );
+  }
+
   const dots: { cx: number; cy: number }[] = [];
   for (let col = 0; col < AXIS; col++) {
     for (let row = 0; row < AXIS; row++) {

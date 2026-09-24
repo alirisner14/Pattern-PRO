@@ -1,4 +1,5 @@
 import { wrap, type Vec } from "./geometry";
+import { diamondTranslations } from "./domain";
 import type { RepeatStyle } from "./types";
 
 export interface Lattice {
@@ -42,6 +43,10 @@ export function buildLattice(
     }
   }
 
+  return { anchors, t1, t2, cellW, cellH, spacing: shortestVector(t1, t2) };
+}
+
+function shortestVector(t1: Vec, t2: Vec): number {
   let spacing = Infinity;
   for (let i = -2; i <= 2; i++) {
     for (let j = -2; j <= 2; j++) {
@@ -50,6 +55,26 @@ export function buildLattice(
       if (len < spacing) spacing = len;
     }
   }
+  return spacing;
+}
 
-  return { anchors, t1, t2, cellW, cellH, spacing };
+// Anchors on an n×n grid that follows the diamond's own slanted sides.
+// The diamond holds half the canvas area, so it gets half the anchors.
+export function buildDiamondAnchors(
+  width: number,
+  height: number,
+  target: number
+): { anchors: Vec[]; spacing: number } {
+  const n = Math.max(1, Math.round(Math.sqrt(target / 2)));
+  const [t1, t2] = diamondTranslations(width, height);
+  const anchors: Vec[] = [];
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) {
+      const u = (i + 0.5) / n;
+      const v = (j + 0.5) / n;
+      anchors.push({ x: u * t2.x + v * t1.x, y: height / 2 + u * t2.y + v * t1.y });
+    }
+  }
+  const step = (t: Vec) => ({ x: t.x / n, y: t.y / n });
+  return { anchors, spacing: shortestVector(step(t1), step(t2)) };
 }

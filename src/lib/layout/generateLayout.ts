@@ -3,12 +3,12 @@ import { buildLattice, type Lattice } from "./lattice";
 import {
   clearance,
   latticeDistance,
-  torusDistance,
   wrap,
   type Circle,
   type DistanceFn,
   type Vec,
 } from "./geometry";
+import { diamondDomain, rectDomain, type Domain } from "./domain";
 import { fillGaps } from "./packing";
 import { RADIUS_RATIO } from "./constants";
 import type { ElementClass, LayoutParams, LayoutResult, PlacedElement } from "./types";
@@ -38,8 +38,10 @@ interface Instance extends Circle {
 
 type RadiusOf = (cls: ElementClass) => number;
 
+// The finished pattern shrinks each template tile to a quarter and repeats it
+// 2×2, so the template itself stays sparse: the midpoint gives ~4 anchors.
 export function anchorCountForDensity(density: number): number {
-  return Math.round(2 * Math.pow(30, density));
+  return Math.max(1, Math.round(Math.pow(36, density)));
 }
 
 function shuffle<T>(items: T[], rng: Rng): T[] {
@@ -111,63 +113,76 @@ function gridInstances(
   return out;
 }
 
-// Scattered: nudge each anchor organically off its lattice point (never into
-// a neighbour), then pack the smaller tiers into whatever gaps that leaves.
+// Scattered (and inside the Diamond): no lattice, so any anchor count works.
+// Anchors are spread by best-candidate sampling, nudged organically (never
+// into a neighbour), then the smaller tiers pack into the gaps left over.
 function scatteredInstances(
-  lattice: Lattice,
+  anchorCount: number,
+  spacing: number,
+  domain: Domain,
   active: ElementClass[],
   radiusOf: RadiusOf,
   gap: number,
-  width: number,
-  height: number,
   rng: Rng
 ): Instance[] {
-  const dist = torusDistance(width, height);
+  const { dist, normalize } = domain;
   const anchorCls = active[0];
   const rA = radiusOf(anchorCls);
-  const maxJitter = SCATTER_JITTER * lattice.spacing;
-  const placed: Circle[] = [];
-  const out: Instance[] = [];
+  const maxJitter = SCATTER_JITTER * spacing;
 
-  for (const a of shuffle(lattice.anchors, rng)) {
-    let best: Vec = a;
-    let bestRoom = clearance(a, placed, dist);
+  // When the tile is shrunk and repeated, a seam nothing crosses reads as a
+  // bare stripe. Pinning one anchor over the point where both seams meet
+  // guarantees a circle split across the horizontal and vertical seams.
+  const corner = domain.seamCorner;
+  const seamAnchor: Circle = {
+    ...normalize({
+      x: corner.x + (rng() - 0.5) * 0.7 * rA,
+      y: corner.y + (rng() - 0.5) * 0.7 * rA,
+    }),
+    r: rA,
+  };
+
+  const count = Math.max(1500, SCATTER_SAMPLES_PER_ANCHOR * anchorCount);
+  const candidates = Array.from({ length: count }, () => domain.sample(rng));
+  const step = Math.sqrt(domain.area / count);
+  const spread = fillGaps({
+    candidates,
+    placed: [seamAnchor],
+    radius: rA,
+    gap,
+    dist,
+    step,
+    maxCount: anchorCount - 1,
+    centre: false,
+  });
+  const anchors: Circle[] = [seamAnchor, ...spread.map((p) => ({ ...p, r: rA }))];
+
+  // Nudge each anchor (except the seam one) against every other anchor's
+  // current position; if no nudge is legal it simply stays put, so the
+  // spacing guaranteed above can never be broken.
+  for (let k = 1; k < anchors.length; k++) {
+    const others = anchors.filter((_, i) => i !== k);
+    const a = anchors[k];
     for (let attempt = 0; attempt < 12; attempt++) {
       const angle = rng() * Math.PI * 2;
       const d = maxJitter * Math.sqrt(rng());
-      const q = {
-        x: wrap(a.x + Math.cos(angle) * d, width),
-        y: wrap(a.y + Math.sin(angle) * d, height),
-      };
-      const room = clearance(q, placed, dist);
-      if (room >= rA + gap) {
-        best = q;
+      const q = normalize({ x: a.x + Math.cos(angle) * d, y: a.y + Math.sin(angle) * d });
+      if (clearance(q, others, dist) >= rA + gap) {
+        anchors[k] = { ...q, r: rA };
         break;
       }
-      if (room > bestRoom) {
-        best = q;
-        bestRoom = room;
-      }
     }
-    placed.push({ ...best, r: rA });
-    out.push({ ...best, r: rA, cls: anchorCls });
   }
 
-  const count = Math.max(1500, SCATTER_SAMPLES_PER_ANCHOR * lattice.anchors.length);
-  const candidates = Array.from({ length: count }, () => ({
-    x: rng() * width,
-    y: rng() * height,
-  }));
-  const step = Math.sqrt((width * height) / count);
+  const placed: Circle[] = [...anchors];
+  const out: Instance[] = anchors.map((a) => ({ ...a, cls: anchorCls }));
 
   active.slice(1).forEach((cls, i, rest) => {
     const r = radiusOf(cls);
     const maxCount =
-      i < rest.length - 1
-        ? Math.round(MIDDLE_TIER_PER_ANCHOR * lattice.anchors.length)
-        : Infinity;
+      i < rest.length - 1 ? Math.round(MIDDLE_TIER_PER_ANCHOR * anchorCount) : Infinity;
     for (const p of fillGaps({ candidates, placed, radius: r, gap, dist, step, maxCount })) {
-      out.push({ x: wrap(p.x, width), y: wrap(p.y, height), r, cls });
+      out.push({ ...normalize(p), r, cls });
     }
   });
   return out;
@@ -212,18 +227,26 @@ export function generateLayout(params: LayoutParams): LayoutResult {
   if (active.length === 0) return { elements: [], warnings: [] };
 
   const rng = mulberry32(seed);
-  const lattice = buildLattice(width, height, repeatStyle, anchorCountForDensity(density));
-  const anchorRadius = ANCHOR_RADIUS * lattice.spacing;
+  const target = anchorCountForDensity(density);
+  const isDiamond = repeatStyle === "diamond";
+  const isFree = isDiamond || repeatStyle === "scattered";
+  const domain = isDiamond ? diamondDomain(width, height) : rectDomain(width, height);
+  const lattice = isFree ? null : buildLattice(width, height, repeatStyle, target);
+  // The diamond holds half the canvas area, so it gets half the anchors;
+  // spacing is area-per-anchor either way, so circle sizes match the grids.
+  const anchorCount = isDiamond ? Math.max(1, Math.round(target / 2)) : target;
+  const spacing = lattice ? lattice.spacing : Math.sqrt(domain.area / anchorCount);
+
+  const anchorRadius = ANCHOR_RADIUS * spacing;
   const radiusOf: RadiusOf = (cls) =>
     (anchorRadius * RADIUS_RATIO[cls]) / RADIUS_RATIO[active[0]];
-  const gap = GAP * lattice.spacing;
+  const gap = GAP * spacing;
 
-  const instances =
-    repeatStyle === "scattered"
-      ? scatteredInstances(lattice, active, radiusOf, gap, width, height, rng)
-      : gridInstances(lattice, active, radiusOf, gap, width, height);
+  const instances = lattice
+    ? gridInstances(lattice, active, radiusOf, gap, width, height)
+    : scatteredInstances(anchorCount, spacing, domain, active, radiusOf, gap, rng);
 
-  const dist = torusDistance(width, height);
+  const dist = domain.dist;
   const elements: PlacedElement[] = [];
   const warnings: string[] = [];
 

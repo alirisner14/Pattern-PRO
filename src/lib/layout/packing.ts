@@ -42,6 +42,7 @@ interface FillOptions {
   dist: DistanceFn;
   step: number;
   maxCount?: number;
+  centre?: boolean;
 }
 
 // Repeatedly drop a circle into the roomiest remaining gap until no gap can
@@ -56,6 +57,7 @@ export function fillGaps({
   dist,
   step,
   maxCount = Infinity,
+  centre = true,
 }: FillOptions): Vec[] {
   const room = candidates.map((c) => clearance(c, placed, dist));
   const added: Vec[] = [];
@@ -72,7 +74,7 @@ export function fillGaps({
     }
     if (bestIndex < 0 || bestRoom < needed) break;
 
-    const p = centreInGap(candidates[bestIndex], placed, dist, step);
+    const p = centre ? centreInGap(candidates[bestIndex], placed, dist, step) : candidates[bestIndex];
     const circle = { x: p.x, y: p.y, r: radius };
     placed.push(circle);
     added.push(p);

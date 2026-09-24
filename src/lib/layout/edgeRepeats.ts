@@ -1,4 +1,8 @@
+import { diamondNorm, diamondTranslations } from "./domain";
+import type { Vec } from "./geometry";
 import type { PlacedElement } from "./types";
+
+export type Shape = "rect" | "diamond";
 
 export interface RenderedCircle {
   key: string;
@@ -20,51 +24,95 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, v));
 }
 
+interface ShapeGeometry {
+  translations: [Vec, Vec];
+  // Signed distance to the outline: positive inside, negative outside.
+  inset: (p: Vec) => number;
+  // Nearest point at least `pad` inside the outline, for label placement.
+  labelPoint: (p: Vec, pad: number) => Vec;
+}
+
+function rectGeometry(width: number, height: number): ShapeGeometry {
+  return {
+    translations: [
+      { x: width, y: 0 },
+      { x: 0, y: height },
+    ],
+    inset: (p) => Math.min(p.x, width - p.x, p.y, height - p.y),
+    labelPoint: (p, pad) => ({
+      x: clamp(p.x, pad, width - pad),
+      y: clamp(p.y, pad, height - pad),
+    }),
+  };
+}
+
+function diamondGeometry(width: number, height: number): ShapeGeometry {
+  const a = width / 2;
+  const b = height / 2;
+  // Distance from the centre to each side, per unit of diamond "norm".
+  const apothem = (a * b) / Math.hypot(a, b);
+  return {
+    translations: diamondTranslations(width, height),
+    inset: (p) => (1 - diamondNorm(p, width, height)) * apothem,
+    // The norm shrinks linearly toward the centre, so walking straight in
+    // reaches the required margin at a closed-form fraction of the way.
+    labelPoint: (p, pad) => {
+      const k = diamondNorm(p, width, height);
+      const s = k > 0 ? clamp(1 - (1 - pad / apothem) / k, 0, 1) : 0;
+      return { x: p.x + s * (a - p.x), y: p.y + s * (b - p.y) };
+    },
+  };
+}
+
 // Every visible fragment of every circle — including the clones that wrap
-// onto the opposite edge/corners — with its label pulled into the visible
-// part so split pairs can be matched across margins.
+// onto the opposite edge(s) — with its label pulled into the visible part so
+// split pairs can be matched across margins.
 export function renderCircles(
   elements: PlacedElement[],
   width: number,
   height: number,
-  showEdgeRepeats: boolean
+  showEdgeRepeats: boolean,
+  shape: Shape
 ): RenderedCircle[] {
+  const geo = shape === "diamond" ? diamondGeometry(width, height) : rectGeometry(width, height);
+  const [t1, t2] = geo.translations;
   const out: RenderedCircle[] = [];
 
   for (const el of elements) {
-    const crossesEdge =
-      el.x - el.radius < 0 ||
-      el.x + el.radius > width ||
-      el.y - el.radius < 0 ||
-      el.y + el.radius > height;
-    const fontSize = el.radius * 0.55;
-    const pad = fontSize * 0.9;
+    const crossesEdge = geo.inset(el) < el.radius;
+    const fullSize = el.radius * 0.55;
 
-    for (const ox of OFFSETS) {
-      for (const oy of OFFSETS) {
-        const isOriginal = ox === 0 && oy === 0;
+    for (const i of OFFSETS) {
+      for (const j of OFFSETS) {
+        const isOriginal = i === 0 && j === 0;
         if (!isOriginal && !showEdgeRepeats) continue;
 
-        const cx = el.x + ox * width;
-        const cy = el.y + oy * height;
-        const nearestX = clamp(cx, 0, width);
-        const nearestY = clamp(cy, 0, height);
-        if (Math.hypot(cx - nearestX, cy - nearestY) >= el.radius) continue;
+        const c = { x: el.x + i * t1.x + j * t2.x, y: el.y + i * t1.y + j * t2.y };
+        if (!isOriginal && geo.inset(c) <= -el.radius) continue;
 
-        const labelX = clamp(cx, pad, width - pad);
-        const labelY = clamp(cy, pad, height - pad);
+        // Thin fragments can't fit a full-size label, so try smaller before
+        // giving up — every visible piece should still say what it is.
+        let fontSize = fullSize;
+        let label = geo.labelPoint(c, fontSize * 0.9);
+        let fits = Math.hypot(label.x - c.x, label.y - c.y) <= el.radius - fontSize * 0.6;
+        for (const scale of [0.7, 0.5]) {
+          if (fits) break;
+          fontSize = fullSize * scale;
+          label = geo.labelPoint(c, fontSize * 0.9);
+          fits = Math.hypot(label.x - c.x, label.y - c.y) <= el.radius - fontSize * 0.6;
+        }
 
         out.push({
-          key: `${el.id}:${ox}:${oy}`,
-          cx,
-          cy,
+          key: `${el.id}:${i}:${j}`,
+          cx: c.x,
+          cy: c.y,
           r: el.radius,
           color: el.color,
           label: el.label,
-          labelX,
-          labelY,
+          labelX: label.x,
+          labelY: label.y,
           fontSize,
-          showLabel: Math.hypot(labelX - cx, labelY - cy) <= el.radius - fontSize * 0.6,
+          showLabel: fits,
           dashed: crossesEdge,
         });
       }

@@ -2,30 +2,37 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { UNIT_OPTIONS, type CanvasConfig } from "@/lib/units";
-import { renderCircles } from "@/lib/layout/edgeRepeats";
+import { renderCircles, type Shape } from "@/lib/layout/edgeRepeats";
 import type { PlacedElement } from "@/lib/layout/types";
 
 interface WorkspaceProps {
   config: CanvasConfig;
   elements: PlacedElement[];
+  shape: Shape;
   showEdgeRepeats: boolean;
   onReset: () => void;
 }
 
 type PreviewTheme = "light" | "dark";
 
+const DIAMOND_CLIP_ID = "pattern-diamond-clip";
+
 export default function Workspace({
   config,
   elements,
+  shape,
   showEdgeRepeats,
   onReset,
 }: WorkspaceProps) {
   const [theme, setTheme] = useState<PreviewTheme>("light");
   const circles = useMemo(
-    () => renderCircles(elements, config.widthPx, config.heightPx, showEdgeRepeats),
-    [elements, config.widthPx, config.heightPx, showEdgeRepeats]
+    () => renderCircles(elements, config.widthPx, config.heightPx, showEdgeRepeats, shape),
+    [elements, config.widthPx, config.heightPx, showEdgeRepeats, shape]
   );
   const strokeWidth = Math.max(2, Math.min(config.widthPx, config.heightPx) * 0.0025);
+  const w = config.widthPx;
+  const h = config.heightPx;
+  const diamondPoints = `${w / 2},0 ${w},${h / 2} ${w / 2},${h} 0,${h / 2}`;
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
 
@@ -120,6 +127,22 @@ export default function Workspace({
             className="absolute inset-0"
             style={{ overflow: "hidden" }}
           >
+            {shape === "diamond" && (
+              <>
+                <defs>
+                  <clipPath id={DIAMOND_CLIP_ID}>
+                    <polygon points={diamondPoints} />
+                  </clipPath>
+                </defs>
+                <polygon
+                  points={diamondPoints}
+                  fill="none"
+                  stroke="#71717a"
+                  strokeWidth={strokeWidth}
+                />
+              </>
+            )}
+            <g clipPath={shape === "diamond" ? `url(#${DIAMOND_CLIP_ID})` : undefined}>
             {circles.map((c) => (
               <g key={c.key}>
                 <circle
@@ -147,6 +170,7 @@ export default function Workspace({
                 )}
               </g>
             ))}
+            </g>
           </svg>
         </div>
       </div>

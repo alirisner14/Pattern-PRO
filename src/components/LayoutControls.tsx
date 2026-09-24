@@ -8,10 +8,12 @@ const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
   { value: "scattered", label: "Scattered" },
   { value: "half-drop", label: "Half-Drop" },
   { value: "brick", label: "Brick" },
+  { value: "diamond", label: "Diamond" },
 ];
 
 interface LayoutControlsProps {
   value: PatternSettings;
+  placementCount: number;
   warnings: string[];
   onChange: (next: PatternSettings) => void;
   onRebuild: () => void;
@@ -19,6 +21,7 @@ interface LayoutControlsProps {
 
 export default function LayoutControls({
   value,
+  placementCount,
   warnings,
   onChange,
   onRebuild,
@@ -57,12 +60,25 @@ export default function LayoutControls({
             Ogee · soon
           </button>
         </div>
+        {value.repeatStyle === "diamond" && (
+          <label className="mt-3 flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+            <input
+              type="checkbox"
+              checked={value.showShapeLayout}
+              onChange={(e) => set("showShapeLayout", e.target.checked)}
+            />
+            Layout inside shape
+          </label>
+        )}
       </div>
 
       <div>
-        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-          Density
-        </h2>
+        <div className="flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Density</h2>
+          <span className="text-xs text-zinc-400 dark:text-zinc-500">
+            {placementCount} placements
+          </span>
+        </div>
         <input
           type="range"
           min={0}

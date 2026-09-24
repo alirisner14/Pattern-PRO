@@ -1,5 +1,5 @@
 export type ElementClass = "hero" | "secondary" | "filler";
-export type RepeatStyle = "grid" | "scattered" | "half-drop" | "brick";
+export type RepeatStyle = "grid" | "scattered" | "half-drop" | "brick" | "diamond";
 
 export interface ElementClassConfig {
   count: number;
@@ -39,4 +39,5 @@ export interface PatternSettings {
   secondaryCount: number;
   fillerCount: number;
   showEdgeRepeats: boolean;
+  showShapeLayout: boolean;
 }
