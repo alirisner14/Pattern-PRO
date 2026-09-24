@@ -206,7 +206,7 @@ function assignMotifs(members: Vec[], motifCount: number, dist: DistanceFn, rng:
 }
 
 export function generateLayout(params: LayoutParams): LayoutResult {
-  const { widthPx: width, heightPx: height, repeatStyle, alignment, density, seed } = params;
+  const { widthPx: width, heightPx: height, repeatStyle, density, seed } = params;
   const configs = { hero: params.hero, secondary: params.secondary, filler: params.filler };
   const active = CLASS_ORDER.filter((c) => configs[c].count > 0);
   if (active.length === 0) return { elements: [], warnings: [] };
@@ -219,9 +219,9 @@ export function generateLayout(params: LayoutParams): LayoutResult {
   const gap = GAP * lattice.spacing;
 
   const instances =
-    alignment === "grid"
-      ? gridInstances(lattice, active, radiusOf, gap, width, height)
-      : scatteredInstances(lattice, active, radiusOf, gap, width, height, rng);
+    repeatStyle === "scattered"
+      ? scatteredInstances(lattice, active, radiusOf, gap, width, height, rng)
+      : gridInstances(lattice, active, radiusOf, gap, width, height);
 
   const dist = torusDistance(width, height);
   const elements: PlacedElement[] = [];

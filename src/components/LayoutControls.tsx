@@ -1,15 +1,14 @@
 "use client";
 
 import RepeatStylePictograph from "@/components/RepeatStylePictograph";
-import type { Alignment, PatternSettings, RepeatStyle } from "@/lib/layout/types";
+import type { PatternSettings, RepeatStyle } from "@/lib/layout/types";
 
 const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
-  { value: "full-drop", label: "Full-Drop" },
+  { value: "grid", label: "Grid" },
+  { value: "scattered", label: "Scattered" },
   { value: "half-drop", label: "Half-Drop" },
   { value: "brick", label: "Brick" },
 ];
-
-const ALIGNMENTS: Alignment[] = ["grid", "scattered"];
 
 interface LayoutControlsProps {
   value: PatternSettings;
@@ -49,27 +48,14 @@ export default function LayoutControls({
               {opt.label}
             </button>
           ))}
-        </div>
-      </div>
-
-      <div>
-        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-          Alignment
-        </h2>
-        <div className="mt-2 flex rounded-md border border-zinc-300 p-0.5 dark:border-zinc-700">
-          {ALIGNMENTS.map((opt) => (
-            <button
-              key={opt}
-              onClick={() => set("alignment", opt)}
-              className={`flex-1 rounded px-3 py-1.5 text-sm capitalize transition-colors ${
-                value.alignment === opt
-                  ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
-                  : "text-zinc-600 dark:text-zinc-400"
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
+          <button
+            disabled
+            title="Coming soon"
+            className="flex cursor-not-allowed flex-col items-center gap-1 rounded-md border border-dashed border-zinc-200 p-2 text-xs text-zinc-400 dark:border-zinc-700 dark:text-zinc-600"
+          >
+            <RepeatStylePictograph style="ogee" />
+            Ogee · soon
+          </button>
         </div>
       </div>
 

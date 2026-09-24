@@ -15,8 +15,7 @@ interface PatternEditorProps {
 }
 
 const DEFAULT_SETTINGS: PatternSettings = {
-  repeatStyle: "full-drop",
-  alignment: "grid",
+  repeatStyle: "grid",
   density: 0.5,
   heroCount: 2,
   secondaryCount: 3,
@@ -34,7 +33,6 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
         widthPx: canvasConfig.widthPx,
         heightPx: canvasConfig.heightPx,
         repeatStyle: settings.repeatStyle,
-        alignment: settings.alignment,
         density: settings.density,
         seed,
         hero: { count: settings.heroCount, color: DEFAULT_CLASS_COLORS.hero },

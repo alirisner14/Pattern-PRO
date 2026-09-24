@@ -1,6 +1,5 @@
 export type ElementClass = "hero" | "secondary" | "filler";
-export type RepeatStyle = "full-drop" | "half-drop" | "brick";
-export type Alignment = "grid" | "scattered";
+export type RepeatStyle = "grid" | "scattered" | "half-drop" | "brick";
 
 export interface ElementClassConfig {
   count: number;
@@ -11,7 +10,6 @@ export interface LayoutParams {
   widthPx: number;
   heightPx: number;
   repeatStyle: RepeatStyle;
-  alignment: Alignment;
   density: number;
   seed: number;
   hero: ElementClassConfig;
@@ -36,7 +34,6 @@ export interface LayoutResult {
 
 export interface PatternSettings {
   repeatStyle: RepeatStyle;
-  alignment: Alignment;
   density: number;
   heroCount: number;
   secondaryCount: number;
