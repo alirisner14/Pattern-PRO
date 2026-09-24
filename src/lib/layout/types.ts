@@ -29,6 +29,11 @@ export interface PlacedElement {
   color: string;
 }
 
+export interface LayoutResult {
+  elements: PlacedElement[];
+  warnings: string[];
+}
+
 export interface PatternSettings {
   repeatStyle: RepeatStyle;
   alignment: Alignment;
@@ -36,4 +41,5 @@ export interface PatternSettings {
   heroCount: number;
   secondaryCount: number;
   fillerCount: number;
+  showEdgeRepeats: boolean;
 }

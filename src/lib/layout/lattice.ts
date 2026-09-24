@@ -1,48 +1,55 @@
+import { wrap, type Vec } from "./geometry";
 import type { RepeatStyle } from "./types";
 
-export interface Point {
-  x: number;
-  y: number;
+export interface Lattice {
+  anchors: Vec[];
+  t1: Vec;
+  t2: Vec;
+  cellW: number;
+  cellH: number;
+  spacing: number;
 }
 
-// A dense, periodic candidate grid that already carries the chosen
-// repeat style's column/row offset, so anything sampled from it keeps
-// that drop structure instead of looking randomly placed.
-export function generateCandidateLattice(
-  widthPx: number,
-  heightPx: number,
-  repeatStyle: RepeatStyle,
-  targetCount: number
-): Point[] {
-  const desiredCandidates = Math.max(targetCount * 6, 24);
-  const aspect = widthPx / heightPx;
-  const rows = Math.max(1, Math.round(Math.sqrt(desiredCandidates / aspect)));
-  const cols = Math.max(1, Math.round(desiredCandidates / rows));
+// The anchor grid for the chosen repeat style. Half-drop needs an even
+// column count (and brick an even row count) so the offset columns/rows
+// still line up when the canvas wraps edge to edge.
+export function buildLattice(
+  width: number,
+  height: number,
+  style: RepeatStyle,
+  target: number
+): Lattice {
+  // Keep cells as close to square as the canvas allows — uneven cells make
+  // the gap geometry (and therefore how the smaller tiers pack) lurch around
+  // as density changes.
+  const aspect = width / height;
+  let cols = Math.max(1, Math.round(Math.sqrt(target * aspect)));
+  if (style === "half-drop" && cols % 2 === 1) cols += 1;
+  let rows = Math.max(1, Math.round(height / (width / cols)));
+  if (style === "brick" && rows % 2 === 1) rows += 1;
 
-  const cellW = widthPx / cols;
-  const cellH = heightPx / rows;
+  const cellW = width / cols;
+  const cellH = height / rows;
+  const t1 = style === "half-drop" ? { x: cellW, y: cellH / 2 } : { x: cellW, y: 0 };
+  const t2 = style === "brick" ? { x: cellW / 2, y: cellH } : { x: 0, y: cellH };
 
-  const points: Point[] = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < cols; col++) {
-      let x = (col + 0.5) * cellW;
-      let y = (row + 0.5) * cellH;
-
-      if (repeatStyle === "half-drop" && col % 2 === 1) {
-        y += cellH / 2;
-      }
-      if (repeatStyle === "brick" && row % 2 === 1) {
-        x += cellW / 2;
-      }
-
-      // The offset can push a point past the canvas edge — wrap it to
-      // the opposite side so the lattice stays periodic (its seamless
-      // counterpart re-enters where this one exits).
-      x = ((x % widthPx) + widthPx) % widthPx;
-      y = ((y % heightPx) + heightPx) % heightPx;
-
-      points.push({ x, y });
+  const anchors: Vec[] = [];
+  for (let c = 0; c < cols; c++) {
+    for (let r = 0; r < rows; r++) {
+      const x = (c + 0.5) * cellW + (style === "brick" && r % 2 === 1 ? cellW / 2 : 0);
+      const y = (r + 0.5) * cellH + (style === "half-drop" && c % 2 === 1 ? cellH / 2 : 0);
+      anchors.push({ x: wrap(x, width), y: wrap(y, height) });
     }
   }
-  return points;
+
+  let spacing = Infinity;
+  for (let i = -2; i <= 2; i++) {
+    for (let j = -2; j <= 2; j++) {
+      if (i === 0 && j === 0) continue;
+      const len = Math.hypot(i * t1.x + j * t2.x, i * t1.y + j * t2.y);
+      if (len < spacing) spacing = len;
+    }
+  }
+
+  return { anchors, t1, t2, cellW, cellH, spacing };
 }

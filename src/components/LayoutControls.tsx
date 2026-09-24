@@ -13,11 +13,17 @@ const ALIGNMENTS: Alignment[] = ["grid", "scattered"];
 
 interface LayoutControlsProps {
   value: PatternSettings;
+  warnings: string[];
   onChange: (next: PatternSettings) => void;
   onRebuild: () => void;
 }
 
-export default function LayoutControls({ value, onChange, onRebuild }: LayoutControlsProps) {
+export default function LayoutControls({
+  value,
+  warnings,
+  onChange,
+  onRebuild,
+}: LayoutControlsProps) {
   function set<K extends keyof PatternSettings>(key: K, next: PatternSettings[K]) {
     onChange({ ...value, [key]: next });
   }
@@ -67,27 +73,39 @@ export default function LayoutControls({ value, onChange, onRebuild }: LayoutCon
         </div>
       </div>
 
-      {value.alignment === "scattered" && (
-        <div>
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-            Density
-          </h2>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={value.density}
-            onChange={(e) => set("density", Number(e.target.value))}
-            className="mt-2 w-full"
-          />
-        </div>
-      )}
+      <div>
+        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+          Density
+        </h2>
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.01}
+          value={value.density}
+          onChange={(e) => set("density", Number(e.target.value))}
+          className="mt-2 w-full"
+        />
+      </div>
+
+      <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+        <input
+          type="checkbox"
+          checked={value.showEdgeRepeats}
+          onChange={(e) => set("showEdgeRepeats", e.target.checked)}
+        />
+        Show Edge Repeats
+      </label>
 
       <div className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-          Elements
-        </h2>
+        <div>
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+            Elements
+          </h2>
+          <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
+            Distinct motifs per tier. Density sets how often they repeat.
+          </p>
+        </div>
         <CountField
           label="Hero (1)"
           value={value.heroCount}
@@ -103,6 +121,11 @@ export default function LayoutControls({ value, onChange, onRebuild }: LayoutCon
           value={value.fillerCount}
           onChange={(v) => set("fillerCount", v)}
         />
+        {warnings.map((w) => (
+          <p key={w} className="text-xs text-amber-600 dark:text-amber-400">
+            {w}
+          </p>
+        ))}
       </div>
 
       <button

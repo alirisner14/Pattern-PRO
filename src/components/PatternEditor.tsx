@@ -18,16 +18,17 @@ const DEFAULT_SETTINGS: PatternSettings = {
   repeatStyle: "full-drop",
   alignment: "grid",
   density: 0.5,
-  heroCount: 1,
-  secondaryCount: 4,
-  fillerCount: 8,
+  heroCount: 2,
+  secondaryCount: 3,
+  fillerCount: 4,
+  showEdgeRepeats: true,
 };
 
 export default function PatternEditor({ canvasConfig, onReset }: PatternEditorProps) {
   const [settings, setSettings] = useState<PatternSettings>(DEFAULT_SETTINGS);
   const [seed, setSeed] = useState(randomSeed);
 
-  const elements = useMemo(
+  const layout = useMemo(
     () =>
       generateLayout({
         widthPx: canvasConfig.widthPx,
@@ -47,10 +48,16 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
     <div className="flex flex-1 min-h-0 overflow-hidden">
       <LayoutControls
         value={settings}
+        warnings={layout.warnings}
         onChange={setSettings}
         onRebuild={() => setSeed(randomSeed())}
       />
-      <Workspace config={canvasConfig} elements={elements} onReset={onReset} />
+      <Workspace
+        config={canvasConfig}
+        elements={layout.elements}
+        showEdgeRepeats={settings.showEdgeRepeats}
+        onReset={onReset}
+      />
     </div>
   );
 }

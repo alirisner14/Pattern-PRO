@@ -1,19 +1,31 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { UNIT_OPTIONS, type CanvasConfig } from "@/lib/units";
+import { renderCircles } from "@/lib/layout/edgeRepeats";
 import type { PlacedElement } from "@/lib/layout/types";
 
 interface WorkspaceProps {
   config: CanvasConfig;
   elements: PlacedElement[];
+  showEdgeRepeats: boolean;
   onReset: () => void;
 }
 
 type PreviewTheme = "light" | "dark";
 
-export default function Workspace({ config, elements, onReset }: WorkspaceProps) {
+export default function Workspace({
+  config,
+  elements,
+  showEdgeRepeats,
+  onReset,
+}: WorkspaceProps) {
   const [theme, setTheme] = useState<PreviewTheme>("light");
+  const circles = useMemo(
+    () => renderCircles(elements, config.widthPx, config.heightPx, showEdgeRepeats),
+    [elements, config.widthPx, config.heightPx, showEdgeRepeats]
+  );
+  const strokeWidth = Math.max(2, Math.min(config.widthPx, config.heightPx) * 0.0025);
   const containerRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
 
@@ -106,28 +118,33 @@ export default function Workspace({ config, elements, onReset }: WorkspaceProps)
             height={config.heightPx}
             viewBox={`0 0 ${config.widthPx} ${config.heightPx}`}
             className="absolute inset-0"
+            style={{ overflow: "hidden" }}
           >
-            {elements.map((el) => (
-              <g key={el.id}>
+            {circles.map((c) => (
+              <g key={c.key}>
                 <circle
-                  cx={el.x}
-                  cy={el.y}
-                  r={el.radius}
+                  cx={c.cx}
+                  cy={c.cy}
+                  r={c.r}
                   fill="none"
-                  stroke={el.color}
-                  strokeWidth={Math.max(1.5, el.radius * 0.05)}
+                  stroke={c.color}
+                  strokeWidth={strokeWidth}
+                  strokeDasharray={c.dashed ? `${strokeWidth * 4} ${strokeWidth * 3}` : undefined}
                 />
-                <text
-                  x={el.x}
-                  y={el.y}
-                  fill={el.color}
-                  fontSize={el.radius * 0.55}
-                  fontFamily="ui-sans-serif, system-ui, sans-serif"
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                >
-                  {el.label}
-                </text>
+                {c.showLabel && (
+                  <text
+                    x={c.labelX}
+                    y={c.labelY}
+                    fill={c.color}
+                    fontSize={c.fontSize}
+                    fontWeight={600}
+                    fontFamily="ui-sans-serif, system-ui, sans-serif"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    {c.label}
+                  </text>
+                )}
               </g>
             ))}
           </svg>

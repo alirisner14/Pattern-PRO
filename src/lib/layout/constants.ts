@@ -6,8 +6,9 @@ export const DEFAULT_CLASS_COLORS: Record<ElementClass, string> = {
   filler: "#16a34a",
 };
 
+// Circle size of each tier relative to the Hero tier.
 export const RADIUS_RATIO: Record<ElementClass, number> = {
-  hero: 0.42,
-  secondary: 0.26,
-  filler: 0.16,
+  hero: 1,
+  secondary: 0.5,
+  filler: 0.27,
 };
