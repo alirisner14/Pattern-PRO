@@ -113,6 +113,45 @@ function gridInstances(
   return out;
 }
 
+// When the tile is shrunk and repeated, a seam nothing crosses reads as a
+// bare stripe. So one element of a random tier straddles the point where the
+// seams meet, and one more sits somewhere random along each seam. Each pin
+// is jittered less than its radius so it's guaranteed to cross.
+function pinSeams(
+  domain: Domain,
+  active: ElementClass[],
+  radiusOf: RadiusOf,
+  gap: number,
+  rng: Rng
+): Instance[] {
+  const pins: Instance[] = [];
+  const pickTier = () => active[Math.floor(rng() * active.length)];
+
+  const pin = (base: () => Vec, cls: ElementClass) => {
+    const r = radiusOf(cls);
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const b = base();
+      const p = domain.normalize({
+        x: b.x + (rng() - 0.5) * 0.7 * r,
+        y: b.y + (rng() - 0.5) * 0.7 * r,
+      });
+      if (clearance(p, pins, domain.dist) >= r + gap) {
+        pins.push({ ...p, r, cls });
+        return;
+      }
+    }
+  };
+
+  pin(() => domain.seamCorner, pickTier());
+  for (const seam of domain.seams) {
+    pin(() => {
+      const t = 0.2 + 0.6 * rng();
+      return { x: seam.start.x + t * seam.along.x, y: seam.start.y + t * seam.along.y };
+    }, pickTier());
+  }
+  return pins;
+}
+
 // Scattered (and inside the Diamond): no lattice, so any anchor count works.
 // Anchors are spread by best-candidate sampling, nudged organically (never
 // into a neighbour), then the smaller tiers pack into the gaps left over.
@@ -129,39 +168,29 @@ function scatteredInstances(
   const anchorCls = active[0];
   const rA = radiusOf(anchorCls);
   const maxJitter = SCATTER_JITTER * spacing;
-
-  // When the tile is shrunk and repeated, a seam nothing crosses reads as a
-  // bare stripe. Pinning one anchor over the point where both seams meet
-  // guarantees a circle split across the horizontal and vertical seams.
-  const corner = domain.seamCorner;
-  const seamAnchor: Circle = {
-    ...normalize({
-      x: corner.x + (rng() - 0.5) * 0.7 * rA,
-      y: corner.y + (rng() - 0.5) * 0.7 * rA,
-    }),
-    r: rA,
-  };
+  const pins = pinSeams(domain, active, radiusOf, gap, rng);
+  const pinned = (cls: ElementClass) => pins.filter((p) => p.cls === cls).length;
 
   const count = Math.max(1500, SCATTER_SAMPLES_PER_ANCHOR * anchorCount);
   const candidates = Array.from({ length: count }, () => domain.sample(rng));
   const step = Math.sqrt(domain.area / count);
   const spread = fillGaps({
     candidates,
-    placed: [seamAnchor],
+    placed: [...pins],
     radius: rA,
     gap,
     dist,
     step,
-    maxCount: anchorCount - 1,
+    maxCount: Math.max(0, anchorCount - pinned(anchorCls)),
     centre: false,
   });
-  const anchors: Circle[] = [seamAnchor, ...spread.map((p) => ({ ...p, r: rA }))];
+  const anchors: Circle[] = spread.map((p) => ({ ...p, r: rA }));
 
-  // Nudge each anchor (except the seam one) against every other anchor's
-  // current position; if no nudge is legal it simply stays put, so the
-  // spacing guaranteed above can never be broken.
-  for (let k = 1; k < anchors.length; k++) {
-    const others = anchors.filter((_, i) => i !== k);
+  // Nudge each anchor against the pins and every other anchor's current
+  // position; if no nudge is legal it simply stays put, so the spacing
+  // guaranteed above can never be broken.
+  for (let k = 0; k < anchors.length; k++) {
+    const others = [...pins, ...anchors.filter((_, i) => i !== k)];
     const a = anchors[k];
     for (let attempt = 0; attempt < 12; attempt++) {
       const angle = rng() * Math.PI * 2;
@@ -174,13 +203,15 @@ function scatteredInstances(
     }
   }
 
-  const placed: Circle[] = [...anchors];
-  const out: Instance[] = anchors.map((a) => ({ ...a, cls: anchorCls }));
+  const placed: Circle[] = [...pins, ...anchors];
+  const out: Instance[] = [...pins, ...anchors.map((a) => ({ ...a, cls: anchorCls }))];
 
   active.slice(1).forEach((cls, i, rest) => {
     const r = radiusOf(cls);
     const maxCount =
-      i < rest.length - 1 ? Math.round(MIDDLE_TIER_PER_ANCHOR * anchorCount) : Infinity;
+      i < rest.length - 1
+        ? Math.max(0, Math.round(MIDDLE_TIER_PER_ANCHOR * anchorCount) - pinned(cls))
+        : Infinity;
     for (const p of fillGaps({ candidates, placed, radius: r, gap, dist, step, maxCount })) {
       out.push({ ...normalize(p), r, cls });
     }

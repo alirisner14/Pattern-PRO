@@ -7,6 +7,8 @@ export interface Domain {
   area: number;
   // A point where both seams meet (canvas corner / diamond vertex).
   seamCorner: Vec;
+  // One segment per distinct seam (opposite edges are the same seam).
+  seams: { start: Vec; along: Vec }[];
   sample: (rng: Rng) => Vec;
   normalize: (p: Vec) => Vec;
 }
@@ -16,6 +18,10 @@ export function rectDomain(width: number, height: number): Domain {
     dist: torusDistance(width, height),
     area: width * height,
     seamCorner: { x: 0, y: 0 },
+    seams: [
+      { start: { x: 0, y: 0 }, along: { x: 0, y: height } },
+      { start: { x: 0, y: 0 }, along: { x: width, y: 0 } },
+    ],
     sample: (rng) => ({ x: rng() * width, y: rng() * height }),
     normalize: (p) => ({ x: wrap(p.x, width), y: wrap(p.y, height) }),
   };
@@ -42,6 +48,10 @@ export function diamondDomain(width: number, height: number): Domain {
     dist: latticeDistance(t1, t2),
     area: (width * height) / 2,
     seamCorner: { x: width / 2, y: 0 },
+    seams: [
+      { start: { x: 0, y: height / 2 }, along: t2 },
+      { start: { x: width / 2, y: 0 }, along: t1 },
+    ],
     sample: (rng) => {
       for (;;) {
         const p = { x: rng() * width, y: rng() * height };
