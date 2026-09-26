@@ -41,7 +41,7 @@ export default function Workspace({
   const [theme, setTheme] = useState<PreviewTheme>("light");
   const circles = useMemo(() => {
     const frame: CircleFrame = shape?.regionTiles
-      ? { kind: "tile", polygon: shape.region }
+      ? { kind: "tile", polygon: shape.region, translations: shape.translations }
       : { kind: "rect" };
     return renderCircles(elements, config.widthPx, config.heightPx, showEdgeRepeats, frame);
   }, [elements, config.widthPx, config.heightPx, showEdgeRepeats, shape]);

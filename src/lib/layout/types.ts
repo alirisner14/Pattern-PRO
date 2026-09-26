@@ -1,5 +1,12 @@
 export type ElementClass = "hero" | "secondary" | "filler";
-import type { OgeeCurve, OgeeStyle, ShapeFit, ShapeModel, ShapeSides } from "../shapes/shapes";
+import type {
+  OgeeCurve,
+  OgeeProportion,
+  OgeeStyle,
+  ShapeFit,
+  ShapeModel,
+  ShapeSides,
+} from "../shapes/shapes";
 
 export type RepeatStyle = "grid" | "scattered" | "half-drop" | "brick" | "diamond" | "ogee";
 
@@ -50,6 +57,7 @@ export interface PatternSettings {
   shapeFit: ShapeFit;
   ogeeStyle: OgeeStyle;
   ogeeCurve: OgeeCurve;
+  ogeeProportion: OgeeProportion;
   outlinePx: number;
   openAmount: number;
   innerCount: number;

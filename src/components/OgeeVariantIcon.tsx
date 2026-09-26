@@ -13,6 +13,7 @@ export default function OgeeVariantIcon({ style, curve }: { style: OgeeStyle; cu
         fit: "closed",
         ogeeStyle: style,
         ogeeCurve: curve,
+        ogeeProportion: "mid",
         openAmount: 0,
         innerCount: 0,
         innerSpacing: 0,
@@ -20,7 +21,10 @@ export default function OgeeVariantIcon({ style, curve }: { style: OgeeStyle; cu
       SIZE,
       SIZE
     );
-    return polygonPoints(shape.copies[0]);
+    // Clip to the icon box (a column runs past its top and bottom).
+    return polygonPoints(
+      shape.copies[0].map((p) => ({ x: p.x, y: Math.max(0, Math.min(SIZE, p.y)) }))
+    );
   }, [style, curve]);
 
   return (

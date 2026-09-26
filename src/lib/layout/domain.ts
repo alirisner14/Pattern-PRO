@@ -1,6 +1,6 @@
 import { latticeDistance, torusDistance, wrap, type DistanceFn, type Vec } from "./geometry";
 import type { Rng } from "./rng";
-import { diamondTranslations, type ShapeModel } from "../shapes/shapes";
+import type { ShapeModel } from "../shapes/shapes";
 import { pointInPolygon, polygonArea, signedDistance } from "../shapes/polygon";
 
 // Where a layout lives and how its edges repeat.
@@ -46,7 +46,7 @@ export function shapeDomain(shape: ShapeModel, width: number, height: number): D
   const sample = (rng: Rng) => sampleInside(region, width, height, rng);
 
   if (shape.regionTiles) {
-    const [t1, t2] = diamondTranslations(width, height);
+    const [t1, t2] = shape.translations;
     return {
       dist: latticeDistance(t1, t2),
       area: polygonArea(region),
@@ -67,7 +67,7 @@ export function shapeDomain(shape: ShapeModel, width: number, height: number): D
 
   return {
     dist: torusDistance(width, height),
-    area: Math.min(width * height, polygonArea(region)),
+    area: shape.area ?? Math.min(width * height, polygonArea(region)),
     seamCorner: null,
     seamSides: [],
     bound: (p) => signedDistance(p, region),

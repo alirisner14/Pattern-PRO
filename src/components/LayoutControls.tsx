@@ -6,8 +6,9 @@ import type { TierColors } from "@/lib/colorPrefs";
 import type { PatternSettings, RepeatStyle } from "@/lib/layout/types";
 import OgeeVariantIcon from "@/components/OgeeVariantIcon";
 import {
-  shapeTiles,
+  PROPORTIONED_OGEES,
   type OgeeCurve,
+  type OgeeProportion,
   type OgeeStyle,
   type ShapeFit,
   type ShapeSides,
@@ -25,28 +26,46 @@ const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
 const OGEE_STYLES: { value: OgeeStyle; label: string }[] = [
   { value: "standard", label: "Standard" },
   { value: "lantern", label: "Lantern" },
+  { value: "arabesque", label: "Arabesque" },
+  { value: "fan", label: "Fan" },
+  { value: "bat", label: "Bat" },
+  { value: "column", label: "Column" },
   { value: "quatrefoil", label: "Quatrefoil" },
+  { value: "steppedQuatrefoil", label: "Stepped" },
   { value: "drop", label: "Drop" },
   { value: "star", label: "Star" },
+  { value: "fourPoint", label: "Four-Point" },
+  { value: "petalX", label: "Petal X" },
+  { value: "notchedSquare", label: "Notched" },
+  { value: "scalloped", label: "Scalloped" },
 ];
 
-type SetSetting = <K extends keyof PatternSettings>(key: K, next: PatternSettings[K]) => void;
+type SetSetting = <K extends keyof PatternSettings>(
+  key: K,
+  next: PatternSettings[K],
+) => void;
 
 const selectClass =
   "rounded-md border border-zinc-300 bg-white px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50";
 
-function ShapeControls({ value, set }: { value: PatternSettings; set: SetSetting }) {
+function ShapeControls({
+  value,
+  set,
+}: {
+  value: PatternSettings;
+  set: SetSetting;
+}) {
   const isDiamond = value.repeatStyle === "diamond";
-  const hasFit = !shapeTiles({
-    kind: isDiamond ? "diamond" : "ogee",
-    sides: value.diamondSides,
-    ogeeStyle: value.ogeeStyle,
-  });
-  const isOpen = hasFit && value.shapeFit === "open";
+  const isOpen = value.shapeFit === "open";
+  const hasProportion =
+    !isDiamond && PROPORTIONED_OGEES.includes(value.ogeeStyle);
+  const hasCurve = !isDiamond && value.ogeeStyle !== "column";
 
   return (
     <div className="flex flex-col gap-3">
-      <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Shape</h2>
+      <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+        Shape
+      </h2>
 
       {!isDiamond && (
         <>
@@ -66,18 +85,36 @@ function ShapeControls({ value, set }: { value: PatternSettings; set: SetSetting
               </button>
             ))}
           </div>
-          <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">
-            Curve
-            <select
-              value={value.ogeeCurve}
-              onChange={(e) => set("ogeeCurve", e.target.value as OgeeCurve)}
-              className={selectClass}
-            >
-              <option value="subtle">Subtle</option>
-              <option value="medium">Medium</option>
-              <option value="deep">Deep</option>
-            </select>
-          </label>
+          {hasProportion && (
+            <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">
+              Proportion
+              <select
+                value={value.ogeeProportion}
+                onChange={(e) =>
+                  set("ogeeProportion", e.target.value as OgeeProportion)
+                }
+                className={selectClass}
+              >
+                <option value="skinny">Skinny</option>
+                <option value="mid">Mid</option>
+                <option value="wide">Wide</option>
+              </select>
+            </label>
+          )}
+          {hasCurve && (
+            <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">
+              Curve
+              <select
+                value={value.ogeeCurve}
+                onChange={(e) => set("ogeeCurve", e.target.value as OgeeCurve)}
+                className={selectClass}
+              >
+                <option value="subtle">Subtle</option>
+                <option value="medium">Medium</option>
+                <option value="deep">Deep</option>
+              </select>
+            </label>
+          )}
         </>
       )}
 
@@ -96,25 +133,27 @@ function ShapeControls({ value, set }: { value: PatternSettings; set: SetSetting
         </label>
       )}
 
-      {hasFit && (
-        <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">
-          Fit
-          <select
-            value={value.shapeFit}
-            onChange={(e) => set("shapeFit", e.target.value as ShapeFit)}
-            className={selectClass}
-          >
-            <option value="closed">Closed</option>
-            <option value="open">Open</option>
-          </select>
-        </label>
-      )}
+      <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">
+        Fit
+        <select
+          value={value.shapeFit}
+          onChange={(e) => set("shapeFit", e.target.value as ShapeFit)}
+          className={selectClass}
+        >
+          <option value="closed">Closed</option>
+          <option value="open">Open</option>
+        </select>
+      </label>
 
       <label className="flex flex-col gap-1 text-sm text-zinc-700 dark:text-zinc-300">
         <span className="flex justify-between">
           {isOpen ? "Open amount" : "Outline thickness"}
           <span className="text-xs text-zinc-400 dark:text-zinc-500">
-            {isOpen ? `${value.openAmount}%` : value.outlinePx ? `${value.outlinePx}px` : "none"}
+            {isOpen
+              ? `${value.openAmount}%`
+              : value.outlinePx
+                ? `${value.outlinePx}px`
+                : "none"}
           </span>
         </span>
         <input
@@ -123,7 +162,9 @@ function ShapeControls({ value, set }: { value: PatternSettings; set: SetSetting
           max={100}
           step={1}
           value={isOpen ? value.openAmount : value.outlinePx}
-          onChange={(e) => set(isOpen ? "openAmount" : "outlinePx", Number(e.target.value))}
+          onChange={(e) =>
+            set(isOpen ? "openAmount" : "outlinePx", Number(e.target.value))
+          }
         />
       </label>
 
@@ -136,7 +177,10 @@ function ShapeControls({ value, set }: { value: PatternSettings; set: SetSetting
           step={1}
           value={value.innerCount}
           onChange={(e) =>
-            set("innerCount", Math.min(8, Math.max(0, Math.round(Number(e.target.value) || 0))))
+            set(
+              "innerCount",
+              Math.min(8, Math.max(0, Math.round(Number(e.target.value) || 0))),
+            )
           }
           className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-right text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
         />
@@ -193,14 +237,18 @@ export default function LayoutControls({
   onRebuild,
 }: LayoutControlsProps) {
   const customColors = (Object.keys(colors) as (keyof TierColors)[]).some(
-    (cls) => colors[cls].toLowerCase() !== DEFAULT_CLASS_COLORS[cls]
+    (cls) => colors[cls].toLowerCase() !== DEFAULT_CLASS_COLORS[cls],
   );
 
-  function set<K extends keyof PatternSettings>(key: K, next: PatternSettings[K]) {
+  function set<K extends keyof PatternSettings>(
+    key: K,
+    next: PatternSettings[K],
+  ) {
     onChange({ ...value, [key]: next });
   }
 
-  const isShape = value.repeatStyle === "diamond" || value.repeatStyle === "ogee";
+  const isShape =
+    value.repeatStyle === "diamond" || value.repeatStyle === "ogee";
 
   return (
     <aside className="flex w-72 shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-200 p-4 dark:border-zinc-800">
@@ -230,7 +278,9 @@ export default function LayoutControls({
 
       <div>
         <div className="flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Density</h2>
+          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+            Density
+          </h2>
           <span className="text-xs text-zinc-400 dark:text-zinc-500">
             {placementCount} placements
           </span>
@@ -339,7 +389,9 @@ function TierRow({
         min={0}
         step={1}
         value={count}
-        onChange={(e) => onCountChange(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+        onChange={(e) =>
+          onCountChange(Math.max(0, Math.round(Number(e.target.value) || 0)))
+        }
         className="w-16 rounded-md border border-zinc-300 bg-white px-2 py-1 text-right text-zinc-900 outline-none focus:border-zinc-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-50"
       />
     </div>

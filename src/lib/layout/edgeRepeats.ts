@@ -1,6 +1,5 @@
 import type { Vec } from "./geometry";
 import type { PlacedElement } from "./types";
-import { diamondTranslations } from "../shapes/shapes";
 import { signedDistance } from "../shapes/polygon";
 
 export interface RenderedCircle {
@@ -48,7 +47,12 @@ function rectGeometry(width: number, height: number): ShapeGeometry {
   };
 }
 
-function tileGeometry(polygon: Vec[], width: number, height: number): ShapeGeometry {
+function tileGeometry(
+  polygon: Vec[],
+  translations: [Vec, Vec],
+  width: number,
+  height: number
+): ShapeGeometry {
   const centre = { x: width / 2, y: height / 2 };
   const inset = (p: Vec) => signedDistance(p, polygon);
   const toward = (p: Vec, s: number) => ({
@@ -56,7 +60,7 @@ function tileGeometry(polygon: Vec[], width: number, height: number): ShapeGeome
     y: p.y + s * (centre.y - p.y),
   });
   return {
-    translations: diamondTranslations(width, height),
+    translations,
     inset,
     // Walk from the fragment's centre toward the shape's centre until the
     // point sits at least `pad` inside the outline.
@@ -76,7 +80,9 @@ function tileGeometry(polygon: Vec[], width: number, height: number): ShapeGeome
 
 // Rect: the canvas edges repeat. Tile: a shape that repeats edge to edge on
 // the diamond lattice, so its own outline is the seam.
-export type CircleFrame = { kind: "rect" } | { kind: "tile"; polygon: Vec[] };
+export type CircleFrame =
+  | { kind: "rect" }
+  | { kind: "tile"; polygon: Vec[]; translations: [Vec, Vec] };
 
 // Every visible fragment of every circle — including the clones that wrap
 // onto the opposite edge(s) — with its label pulled into the visible part so
@@ -90,7 +96,7 @@ export function renderCircles(
 ): RenderedCircle[] {
   const geo =
     frame.kind === "tile"
-      ? tileGeometry(frame.polygon, width, height)
+      ? tileGeometry(frame.polygon, frame.translations, width, height)
       : rectGeometry(width, height);
   const [t1, t2] = geo.translations;
   const out: RenderedCircle[] = [];

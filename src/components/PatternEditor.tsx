@@ -7,7 +7,7 @@ import { generateLayout } from "@/lib/layout/generateLayout";
 import { DEFAULT_CLASS_COLORS } from "@/lib/layout/constants";
 import { randomSeed } from "@/lib/layout/rng";
 import { loadTierColors, saveTierColors, type TierColors } from "@/lib/colorPrefs";
-import { buildShape, shapeTiles } from "@/lib/shapes/shapes";
+import { buildShape } from "@/lib/shapes/shapes";
 import type { CanvasConfig } from "@/lib/units";
 import type { PatternSettings } from "@/lib/layout/types";
 
@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS: PatternSettings = {
   shapeFit: "closed",
   ogeeStyle: "standard",
   ogeeCurve: "medium",
+  ogeeProportion: "mid",
   outlinePx: 0,
   openAmount: 25,
   innerCount: 0,
@@ -46,19 +47,13 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
     shapeFit,
     ogeeStyle,
     ogeeCurve,
+    ogeeProportion,
     openAmount,
     innerCount,
     innerSpacing,
   } = settings;
   const isShape = repeatStyle === "diamond" || repeatStyle === "ogee";
-  const isOpen =
-    isShape &&
-    shapeFit === "open" &&
-    !shapeTiles({
-      kind: repeatStyle === "ogee" ? "ogee" : "diamond",
-      sides: diamondSides,
-      ogeeStyle,
-    });
+  const isOpen = isShape && shapeFit === "open";
 
   const shape = useMemo(
     () =>
@@ -70,6 +65,7 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
               fit: shapeFit,
               ogeeStyle,
               ogeeCurve,
+              ogeeProportion,
               openAmount,
               innerCount,
               innerSpacing,
@@ -85,6 +81,7 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
       shapeFit,
       ogeeStyle,
       ogeeCurve,
+      ogeeProportion,
       openAmount,
       innerCount,
       innerSpacing,
