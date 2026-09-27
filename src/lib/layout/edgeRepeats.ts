@@ -51,7 +51,7 @@ function tileGeometry(
   polygon: Vec[],
   translations: [Vec, Vec],
   width: number,
-  height: number
+  height: number,
 ): ShapeGeometry {
   const centre = { x: width / 2, y: height / 2 };
   const inset = (p: Vec) => signedDistance(p, polygon);
@@ -81,8 +81,7 @@ function tileGeometry(
 // Rect: the canvas edges repeat. Tile: a shape that repeats edge to edge on
 // the diamond lattice, so its own outline is the seam.
 export type CircleFrame =
-  | { kind: "rect" }
-  | { kind: "tile"; polygon: Vec[]; translations: [Vec, Vec] };
+  { kind: "rect" } | { kind: "tile"; polygon: Vec[]; translations: [Vec, Vec] };
 
 // Every visible fragment of every circle — including the clones that wrap
 // onto the opposite edge(s) — with its label pulled into the visible part so
@@ -92,7 +91,7 @@ export function renderCircles(
   width: number,
   height: number,
   showEdgeRepeats: boolean,
-  frame: CircleFrame
+  frame: CircleFrame,
 ): RenderedCircle[] {
   const geo =
     frame.kind === "tile"
@@ -110,7 +109,10 @@ export function renderCircles(
         const isOriginal = i === 0 && j === 0;
         if (!isOriginal && !showEdgeRepeats) continue;
 
-        const c = { x: el.x + i * t1.x + j * t2.x, y: el.y + i * t1.y + j * t2.y };
+        const c = {
+          x: el.x + i * t1.x + j * t2.x,
+          y: el.y + i * t1.y + j * t2.y,
+        };
         if (!isOriginal && geo.inset(c) <= -el.radius) continue;
 
         // Every visible piece must say what it is. Shrink the label until it
@@ -118,12 +120,16 @@ export function renderCircles(
         // outside the sliver (still inside the canvas) — usability over looks.
         let fontSize = fullSize;
         let label = geo.labelPoint(c, fontSize * 0.9);
-        let fits = Math.hypot(label.x - c.x, label.y - c.y) <= el.radius - fontSize * 0.6;
+        let fits =
+          Math.hypot(label.x - c.x, label.y - c.y) <=
+          el.radius - fontSize * 0.6;
         for (const scale of [0.7, 0.5]) {
           if (fits) break;
           fontSize = fullSize * scale;
           label = geo.labelPoint(c, fontSize * 0.9);
-          fits = Math.hypot(label.x - c.x, label.y - c.y) <= el.radius - fontSize * 0.6;
+          fits =
+            Math.hypot(label.x - c.x, label.y - c.y) <=
+            el.radius - fontSize * 0.6;
         }
 
         out.push({

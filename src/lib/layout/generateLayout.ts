@@ -323,7 +323,55 @@ function assignMotifs(
   return result;
 }
 
+// Mirror: lay out one quarter, kept clear of its edges (every edge is a
+// mirror axis), then flip it into the other three quarters. The flipped
+// 2×2 block repeats as a plain grid.
+function mirrorLayout(params: LayoutParams): LayoutResult {
+  const w = params.widthPx / 2;
+  const h = params.heightPx / 2;
+  const quarter = [
+    { x: 0, y: 0 },
+    { x: w, y: 0 },
+    { x: w, y: h },
+    { x: 0, y: h },
+  ];
+  const inner = generateLayout({
+    ...params,
+    widthPx: w,
+    heightPx: h,
+    repeatStyle: "scattered",
+    // Four copies of the quarter, so a quarter of the placements each.
+    density: Math.max(0, params.density - Math.log(4) / Math.log(36)),
+    shape: {
+      region: quarter,
+      regionTiles: false,
+      translations: [
+        { x: w, y: 0 },
+        { x: 0, y: h },
+      ],
+      copies: [quarter],
+      inner: [],
+      seamCorner: null,
+      seamSides: [],
+    },
+  });
+  const W = params.widthPx;
+  const H = params.heightPx;
+  const elements = inner.elements.flatMap((e) => [
+    e,
+    { ...e, id: `${e.id}-h`, x: W - e.x, angle: 180 - e.angle },
+    { ...e, id: `${e.id}-v`, y: H - e.y, angle: -e.angle },
+    { ...e, id: `${e.id}-hv`, x: W - e.x, y: H - e.y, angle: 180 + e.angle },
+  ]);
+  return { elements, warnings: inner.warnings, mirrorAxes: true };
+}
+
+// Ditsy: tiny motifs, scattered this many times more densely.
+const DITSY_MULTIPLIER = 4;
+
 export function generateLayout(params: LayoutParams): LayoutResult {
+  if (params.repeatStyle === "mirror" && !params.shape)
+    return mirrorLayout(params);
   const {
     widthPx: width,
     heightPx: height,
@@ -340,9 +388,12 @@ export function generateLayout(params: LayoutParams): LayoutResult {
   if (active.length === 0) return { elements: [], warnings: [] };
 
   const rng = mulberry32(seed);
-  const target = anchorCountForDensity(density);
+  const target =
+    anchorCountForDensity(density) *
+    (repeatStyle === "ditsy" ? DITSY_MULTIPLIER : 1);
   const { shape } = params;
-  const isFree = !!shape || repeatStyle === "scattered";
+  const isFree =
+    !!shape || repeatStyle === "scattered" || repeatStyle === "ditsy";
   const domain = shape
     ? shapeDomain(shape, width, height)
     : rectDomain(width, height);

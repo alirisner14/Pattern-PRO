@@ -1,4 +1,10 @@
-import { latticeDistance, torusDistance, wrap, type DistanceFn, type Vec } from "./geometry";
+import {
+  latticeDistance,
+  torusDistance,
+  wrap,
+  type DistanceFn,
+  type Vec,
+} from "./geometry";
 import type { Rng } from "./rng";
 import type { ShapeModel } from "../shapes/shapes";
 import { pointInPolygon, polygonArea, signedDistance } from "../shapes/polygon";
@@ -25,15 +31,26 @@ export function rectDomain(width: number, height: number): Domain {
     area: width * height,
     seamCorner: { x: 0, y: 0 },
     seamSides: [
-      Array.from({ length: SEAM_SAMPLES + 1 }, (_, k) => ({ x: 0, y: (k * height) / SEAM_SAMPLES })),
-      Array.from({ length: SEAM_SAMPLES + 1 }, (_, k) => ({ x: (k * width) / SEAM_SAMPLES, y: 0 })),
+      Array.from({ length: SEAM_SAMPLES + 1 }, (_, k) => ({
+        x: 0,
+        y: (k * height) / SEAM_SAMPLES,
+      })),
+      Array.from({ length: SEAM_SAMPLES + 1 }, (_, k) => ({
+        x: (k * width) / SEAM_SAMPLES,
+        y: 0,
+      })),
     ],
     sample: (rng) => ({ x: rng() * width, y: rng() * height }),
     normalize: (p) => ({ x: wrap(p.x, width), y: wrap(p.y, height) }),
   };
 }
 
-function sampleInside(poly: Vec[], width: number, height: number, rng: Rng): Vec {
+function sampleInside(
+  poly: Vec[],
+  width: number,
+  height: number,
+  rng: Rng,
+): Vec {
   for (let attempt = 0; attempt < 10000; attempt++) {
     const p = { x: rng() * width, y: rng() * height };
     if (pointInPolygon(p, poly)) return p;
@@ -41,7 +58,11 @@ function sampleInside(poly: Vec[], width: number, height: number, rng: Rng): Vec
   return { x: width / 2, y: height / 2 };
 }
 
-export function shapeDomain(shape: ShapeModel, width: number, height: number): Domain {
+export function shapeDomain(
+  shape: ShapeModel,
+  width: number,
+  height: number,
+): Domain {
   const { region } = shape;
   const sample = (rng: Rng) => sampleInside(region, width, height, rng);
 
@@ -56,7 +77,10 @@ export function shapeDomain(shape: ShapeModel, width: number, height: number): D
       normalize: (p) => {
         for (let i = -2; i <= 2; i++) {
           for (let j = -2; j <= 2; j++) {
-            const q = { x: p.x + i * t1.x + j * t2.x, y: p.y + i * t1.y + j * t2.y };
+            const q = {
+              x: p.x + i * t1.x + j * t2.x,
+              y: p.y + i * t1.y + j * t2.y,
+            };
             if (pointInPolygon(q, region)) return q;
           }
         }

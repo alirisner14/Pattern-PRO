@@ -15,6 +15,7 @@ interface WorkspaceProps {
   outlinePx: number;
   showEdgeRepeats: boolean;
   trellis?: { cellW: number; cellH: number };
+  mirrorAxes?: boolean;
   onReset: () => void;
 }
 
@@ -25,7 +26,7 @@ const SHADE_MASK_ID = "pattern-shade-mask";
 // 70% lightness: marks everything outside the shape as "don't draw here".
 const SHADE = "#b3b3b3";
 const WATERMARK_ID = "pattern-watermark";
-const WATERMARK_TEXT = "Patterns PRO";
+const WATERMARK_TEXT = "Pattern PRO";
 
 // Trellis for the Lattice style: diagonal lines that break at each crossing,
 // with a dot where they meet. Diamonds centred on the cell corners cover
@@ -148,6 +149,7 @@ export default function Workspace({
   outlinePx,
   showEdgeRepeats,
   trellis,
+  mirrorAxes,
   onReset,
 }: WorkspaceProps) {
   const [theme, setTheme] = useState<PreviewTheme>("light");
@@ -323,6 +325,15 @@ export default function Workspace({
                 cellH={trellis.cellH}
                 w={w}
                 h={h}
+              />
+            )}
+            {mirrorAxes && (
+              <path
+                d={`M${w / 2} 0 V${h} M0 ${h / 2} H${w}`}
+                stroke="#000"
+                strokeOpacity={0.35}
+                strokeWidth={trellisLineWidth(w, h)}
+                strokeDasharray={`${trellisLineWidth(w, h) * 4} ${trellisLineWidth(w, h) * 4}`}
               />
             )}
             <g clipPath={shape ? `url(#${SHAPE_CLIP_ID})` : undefined}>

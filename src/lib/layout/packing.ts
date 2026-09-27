@@ -1,16 +1,26 @@
 import { clearance, type Circle, type DistanceFn, type Vec } from "./geometry";
 
 const DIRECTIONS = [
-  [1, 0], [-1, 0], [0, 1], [0, -1],
-  [Math.SQRT1_2, Math.SQRT1_2], [-Math.SQRT1_2, Math.SQRT1_2],
-  [Math.SQRT1_2, -Math.SQRT1_2], [-Math.SQRT1_2, -Math.SQRT1_2],
+  [1, 0],
+  [-1, 0],
+  [0, 1],
+  [0, -1],
+  [Math.SQRT1_2, Math.SQRT1_2],
+  [-Math.SQRT1_2, Math.SQRT1_2],
+  [Math.SQRT1_2, -Math.SQRT1_2],
+  [-Math.SQRT1_2, -Math.SQRT1_2],
 ];
 
 export type Bound = (p: Vec) => number;
 
 // Room at a point: distance to the nearest placed circle's edge, and (inside
 // a shape that doesn't wrap) to the shape's own outline.
-export function roomAt(p: Vec, placed: Circle[], dist: DistanceFn, bound?: Bound): number {
+export function roomAt(
+  p: Vec,
+  placed: Circle[],
+  dist: DistanceFn,
+  bound?: Bound,
+): number {
   const c = clearance(p, placed, dist);
   return bound ? Math.min(c, bound(p)) : c;
 }
@@ -23,11 +33,13 @@ function centreInGap(
   placed: Circle[],
   dist: DistanceFn,
   step: number,
-  bound?: Bound
+  bound?: Bound,
 ): Vec {
   const reach = 2 * step;
   const startRoom = roomAt(start, placed, dist, bound);
-  const nearby = placed.filter((c) => dist(start, c) - c.r < startRoom + 2 * reach);
+  const nearby = placed.filter(
+    (c) => dist(start, c) - c.r < startRoom + 2 * reach,
+  );
 
   let p = start;
   let best = startRoom;

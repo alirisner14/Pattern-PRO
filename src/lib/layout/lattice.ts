@@ -17,7 +17,7 @@ export function buildLattice(
   width: number,
   height: number,
   style: RepeatStyle,
-  target: number
+  target: number,
 ): Lattice {
   // Keep cells as close to square as the canvas allows — uneven cells make
   // the gap geometry (and therefore how the smaller tiers pack) lurch around
@@ -47,14 +47,19 @@ export function buildLattice(
     return { anchors, t1, t2, cellW, cellH, spacing: shortestVector(t1, t2) };
   }
 
-  const t1 = style === "half-drop" ? { x: cellW, y: cellH / 2 } : { x: cellW, y: 0 };
-  const t2 = style === "brick" ? { x: cellW / 2, y: cellH } : { x: 0, y: cellH };
+  const t1 =
+    style === "half-drop" ? { x: cellW, y: cellH / 2 } : { x: cellW, y: 0 };
+  const t2 =
+    style === "brick" ? { x: cellW / 2, y: cellH } : { x: 0, y: cellH };
 
   const anchors: Vec[] = [];
   for (let c = 0; c < cols; c++) {
     for (let r = 0; r < rows; r++) {
-      const x = (c + 0.5) * cellW + (style === "brick" && r % 2 === 1 ? cellW / 2 : 0);
-      const y = (r + 0.5) * cellH + (style === "half-drop" && c % 2 === 1 ? cellH / 2 : 0);
+      const x =
+        (c + 0.5) * cellW + (style === "brick" && r % 2 === 1 ? cellW / 2 : 0);
+      const y =
+        (r + 0.5) * cellH +
+        (style === "half-drop" && c % 2 === 1 ? cellH / 2 : 0);
       anchors.push({ x: wrap(x, width), y: wrap(y, height) });
     }
   }

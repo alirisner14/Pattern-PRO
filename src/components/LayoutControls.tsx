@@ -20,6 +20,8 @@ const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
   { value: "half-drop", label: "Half-Drop" },
   { value: "brick", label: "Brick" },
   { value: "lattice", label: "Lattice" },
+  { value: "mirror", label: "Mirror" },
+  { value: "ditsy", label: "Ditsy" },
   { value: "diamond", label: "Diamond" },
   { value: "ogee", label: "Ogee" },
 ];

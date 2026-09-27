@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Patterns PRO",
+  title: "Pattern PRO",
   description: "Blueprint drafting tool for seamless surface pattern layouts.",
 };
 

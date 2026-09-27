@@ -13,7 +13,8 @@ export function loadTierColors(): TierColors {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
     for (const cls of Object.keys(colors) as ElementClass[]) {
-      if (typeof saved[cls] === "string" && HEX.test(saved[cls])) colors[cls] = saved[cls];
+      if (typeof saved[cls] === "string" && HEX.test(saved[cls]))
+        colors[cls] = saved[cls];
     }
   } catch {}
   return colors;

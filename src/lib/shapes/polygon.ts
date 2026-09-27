@@ -5,7 +5,10 @@ export function pointInPolygon(p: Vec, poly: Vec[]): boolean {
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
     const a = poly[i];
     const b = poly[j];
-    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) {
+    if (
+      a.y > p.y !== b.y > p.y &&
+      p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x
+    ) {
       inside = !inside;
     }
   }
@@ -16,7 +19,9 @@ function segmentDistance(p: Vec, a: Vec, b: Vec): number {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const len2 = dx * dx + dy * dy;
-  const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)) : 0;
+  const t = len2
+    ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2))
+    : 0;
   return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 }
 
@@ -38,7 +43,10 @@ export function polygonArea(poly: Vec[]): number {
 }
 
 export function scalePolygon(poly: Vec[], centre: Vec, k: number): Vec[] {
-  return poly.map((p) => ({ x: centre.x + (p.x - centre.x) * k, y: centre.y + (p.y - centre.y) * k }));
+  return poly.map((p) => ({
+    x: centre.x + (p.x - centre.x) * k,
+    y: centre.y + (p.y - centre.y) * k,
+  }));
 }
 
 export function translatePolygon(poly: Vec[], t: Vec): Vec[] {

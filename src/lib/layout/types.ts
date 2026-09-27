@@ -14,6 +14,8 @@ export type RepeatStyle =
   | "half-drop"
   | "brick"
   | "lattice"
+  | "mirror"
+  | "ditsy"
   | "diamond"
   | "ogee";
 
@@ -51,6 +53,8 @@ export interface LayoutResult {
   elements: PlacedElement[];
   // Lattice: the trellis cell size, for drawing its lines.
   trellis?: { cellW: number; cellH: number };
+  // Mirror: the canvas's centre lines are mirror axes.
+  mirrorAxes?: boolean;
   warnings: string[];
 }
 

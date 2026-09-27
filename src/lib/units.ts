@@ -38,7 +38,7 @@ export function buildCanvasConfig(
   rawWidth: number,
   rawHeight: number,
   unit: Unit,
-  dpi: number
+  dpi: number,
 ): CanvasConfig {
   return {
     unit,

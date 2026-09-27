@@ -33,7 +33,10 @@ export function latticeDistance(t1: Vec, t2: Vec): DistanceFn {
     let best = Infinity;
     for (let i = -2; i <= 2; i++) {
       for (let j = -2; j <= 2; j++) {
-        const d = Math.hypot(dx + i * t1.x + j * t2.x, dy + i * t1.y + j * t2.y);
+        const d = Math.hypot(
+          dx + i * t1.x + j * t2.x,
+          dy + i * t1.y + j * t2.y,
+        );
         if (d < best) best = d;
       }
     }

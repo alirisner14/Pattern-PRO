@@ -54,7 +54,11 @@ export interface ShapeModel {
 const SIDE_SAMPLES = 64;
 // Concave/convex bow depth and ogee S-curve sway, as fractions of side length.
 const BOW = 0.2;
-const OGEE_SWAY: Record<OgeeCurve, number> = { subtle: 0.06, medium: 0.1, deep: 0.14 };
+const OGEE_SWAY: Record<OgeeCurve, number> = {
+  subtle: 0.06,
+  medium: 0.1,
+  deep: 0.14,
+};
 // Lantern shoulder: where the step sits along the side, and how deep it is
 // relative to the sway.
 const LANTERN_STEP: [number, number] = [0.58, 0.72];
@@ -67,14 +71,26 @@ interface Profile {
 }
 
 // Quatrefoil lobe-centre offset, drop tip sharpness, and star pinch, per Curve.
-const QUATREFOIL_OFFSET: Record<OgeeCurve, number> = { subtle: 0.3, medium: 0.4, deep: 0.5 };
+const QUATREFOIL_OFFSET: Record<OgeeCurve, number> = {
+  subtle: 0.3,
+  medium: 0.4,
+  deep: 0.5,
+};
 const QUATREFOIL_STEP = 0.06;
 const QUATREFOIL_STEP_WIDTH = 0.12;
 const DROP_TIP: Record<OgeeCurve, number> = { subtle: 0.6, medium: 1, deep: 2 };
-const STAR_PINCH: Record<OgeeCurve, number> = { subtle: 0.06, medium: 0.1, deep: 0.14 };
+const STAR_PINCH: Record<OgeeCurve, number> = {
+  subtle: 0.06,
+  medium: 0.1,
+  deep: 0.14,
+};
 const STAR_SHOULDER = 0.04;
 // Fan: a circular arc whose ends meet the neighbouring side smoothly.
-const FAN_SAG: Record<OgeeCurve, number> = { subtle: 0.15, medium: 0.207, deep: 0.26 };
+const FAN_SAG: Record<OgeeCurve, number> = {
+  subtle: 0.15,
+  medium: 0.207,
+  deep: 0.26,
+};
 // Bat: [side lobe, top lobe] sagittas.
 const BAT_SAG: Record<OgeeCurve, [number, number]> = {
   subtle: [0.22, 0.15],
@@ -87,9 +103,17 @@ const FOUR_POINT: Record<OgeeCurve, [number, number]> = {
   medium: [0.24, 0.12],
   deep: [0.3, 0.16],
 };
-const PETAL_CUSP: Record<OgeeCurve, number> = { subtle: 0.55, medium: 0.45, deep: 0.35 };
+const PETAL_CUSP: Record<OgeeCurve, number> = {
+  subtle: 0.55,
+  medium: 0.45,
+  deep: 0.35,
+};
 const PETAL_SAG = 0.18;
-const NOTCH_RADIUS: Record<OgeeCurve, number> = { subtle: 0.12, medium: 0.2, deep: 0.28 };
+const NOTCH_RADIUS: Record<OgeeCurve, number> = {
+  subtle: 0.12,
+  medium: 0.2,
+  deep: 0.28,
+};
 // Wavy diamond: [bulge, pinch] per half-side, and the jog where halves meet.
 const WAVY_DIAMOND: Record<OgeeCurve, [number, number]> = {
   subtle: [0.08, 0.03],
@@ -98,20 +122,42 @@ const WAVY_DIAMOND: Record<OgeeCurve, [number, number]> = {
 };
 const WAVY_JOG = 0.025;
 // Badge: how far the side points reach, and the ripple before them.
-const BADGE_POINT: Record<OgeeCurve, number> = { subtle: 0.45, medium: 0.55, deep: 0.65 };
+const BADGE_POINT: Record<OgeeCurve, number> = {
+  subtle: 0.45,
+  medium: 0.55,
+  deep: 0.65,
+};
 const BADGE_RIPPLE = 0.07;
 const BADGE_CORNER = 0.45;
-const COLUMN_WIDTH: Record<OgeeProportion, number> = { skinny: 0.34, mid: 0.48, wide: 0.67 };
+const COLUMN_WIDTH: Record<OgeeProportion, number> = {
+  skinny: 0.34,
+  mid: 0.48,
+  wide: 0.67,
+};
 const OUTLINE_SAMPLES = 256;
 
-const TILING_OGEES: OgeeStyle[] = ["standard", "lantern", "arabesque", "fan", "bat"];
+const TILING_OGEES: OgeeStyle[] = [
+  "standard",
+  "lantern",
+  "arabesque",
+  "fan",
+  "bat",
+];
 // Only these take the Proportion option (the references come in those sizes).
-export const PROPORTIONED_OGEES: OgeeStyle[] = ["standard", "lantern", "column"];
+export const PROPORTIONED_OGEES: OgeeStyle[] = [
+  "standard",
+  "lantern",
+  "column",
+];
 
 // Only these repeat edge to edge on their own (when Closed); every other
 // shape keeps its circles inside the outline.
-export function shapeTiles(o: Pick<ShapeOptions, "kind" | "sides" | "ogeeStyle">): boolean {
-  return o.kind === "ogee" ? TILING_OGEES.includes(o.ogeeStyle) : o.sides === "straight";
+export function shapeTiles(
+  o: Pick<ShapeOptions, "kind" | "sides" | "ogeeStyle">,
+): boolean {
+  return o.kind === "ogee"
+    ? TILING_OGEES.includes(o.ogeeStyle)
+    : o.sides === "straight";
 }
 
 // Offset of a circular arc over s in [0, 1] with the given sagitta (both as
@@ -134,9 +180,16 @@ function ogeeProfile(style: OgeeStyle, sway: number): Profile {
   }
   if (style === "arabesque") {
     // Straight runs instead of curves, with an angled step on the pinch.
-    const tri = (s: number) => (s < 0.25 ? s * 4 : s < 0.75 ? 2 - s * 4 : s * 4 - 4);
+    const tri = (s: number) =>
+      s < 0.25 ? s * 4 : s < 0.75 ? 2 - s * 4 : s * 4 - 4;
     const notch = (s: number) =>
-      s < 0.52 || s > 0.78 ? 0 : s < 0.6 ? (s - 0.52) / 0.08 : s <= 0.7 ? 1 : (0.78 - s) / 0.08;
+      s < 0.52 || s > 0.78
+        ? 0
+        : s < 0.6
+          ? (s - 0.52) / 0.08
+          : s <= 0.7
+            ? 1
+            : (0.78 - s) / 0.08;
     return {
       at: (s) => sway * tri(s) - LANTERN_DEPTH * sway * notch(s),
       breaks: [0.25, 0.52, 0.6, 0.7, 0.75, 0.78],
@@ -151,7 +204,8 @@ function fanProfile(style: OgeeStyle, curve: OgeeCurve): Profile {
   if (style === "bat") {
     const [sideSag, topSag] = BAT_SAG[curve];
     return {
-      at: (s) => (s < 0.5 ? 0.5 * arc(2 * s, sideSag) : 0.5 * arc(2 * s - 1, topSag)),
+      at: (s) =>
+        s < 0.5 ? 0.5 * arc(2 * s, sideSag) : 0.5 * arc(2 * s - 1, topSag),
       breaks: [0.5],
     };
   }
@@ -172,7 +226,10 @@ function side(a: Vec, b: Vec, centre: Vec, profile: Profile): Vec[] {
   const len = Math.hypot(dx, dy);
   let nx = -dy / len;
   let ny = dx / len;
-  if (nx * ((a.x + b.x) / 2 - centre.x) + ny * ((a.y + b.y) / 2 - centre.y) < 0) {
+  if (
+    nx * ((a.x + b.x) / 2 - centre.x) + ny * ((a.y + b.y) / 2 - centre.y) <
+    0
+  ) {
     nx = -nx;
     ny = -ny;
   }
@@ -196,7 +253,10 @@ const join = (sides: Vec[][]) => sides.flatMap((s) => s.slice(0, -1));
 // Shapes defined in a unit square ([-1, 1] on both axes) and stretched to the
 // canvas, so they touch all four edges when Closed.
 function fromUnit(points: Vec[], width: number, height: number): Vec[] {
-  return points.map((p) => ({ x: width / 2 + (p.x * width) / 2, y: height / 2 + (p.y * height) / 2 }));
+  return points.map((p) => ({
+    x: width / 2 + (p.x * width) / 2,
+    y: height / 2 + (p.y * height) / 2,
+  }));
 }
 
 // Four overlapping circular lobes: trace the outermost hit along each ray.
@@ -253,7 +313,9 @@ function petalX(curve: OgeeCurve): Vec[] {
   const origin = { x: 0, y: 0 };
   const petal = flat((s) => arc(s, PETAL_SAG));
   const clampUnit = (v: number) => Math.max(-1, Math.min(1, v));
-  return join(pts.map((p, i) => side(p, pts[(i + 1) % pts.length], origin, petal))).map((p) => ({
+  return join(
+    pts.map((p, i) => side(p, pts[(i + 1) % pts.length], origin, petal)),
+  ).map((p) => ({
     x: clampUnit(p.x),
     y: clampUnit(p.y),
   }));
@@ -273,7 +335,7 @@ function notchedSquare(curve: OgeeCurve): Vec[] {
     Array.from({ length: steps + 1 }, (_, i) => {
       const a = c.from - (i / steps) * (Math.PI / 2);
       return { x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) };
-    })
+    }),
   );
 }
 
@@ -311,7 +373,7 @@ function badge(curve: OgeeCurve): Vec[] {
       side(tr, br, origin, pointed),
       side(br, bl, origin, lobes),
       side(bl, tl, origin, pointed),
-    ])
+    ]),
   );
 }
 
@@ -332,7 +394,11 @@ function cellHalf(o: ShapeOptions, width: number, height: number): Vec {
   };
 }
 
-export function buildShape(o: ShapeOptions, width: number, height: number): ShapeModel {
+export function buildShape(
+  o: ShapeOptions,
+  width: number,
+  height: number,
+): ShapeModel {
   const centre = { x: width / 2, y: height / 2 };
   const half = cellHalf(o, width, height);
   const L = { x: centre.x - half.x, y: centre.y };
@@ -351,7 +417,11 @@ export function buildShape(o: ShapeOptions, width: number, height: number): Shap
   let tr: Vec[] = [];
   let outer: Vec[];
   if (style === "quatrefoil" || style === "steppedQuatrefoil") {
-    outer = fromUnit(quatrefoil(o.ogeeCurve, style === "steppedQuatrefoil"), width, height);
+    outer = fromUnit(
+      quatrefoil(o.ogeeCurve, style === "steppedQuatrefoil"),
+      width,
+      height,
+    );
   } else if (style === "drop") {
     outer = fromUnit(drop(o.ogeeCurve), width, height);
   } else if (style === "petalX") {
@@ -364,9 +434,11 @@ export function buildShape(o: ShapeOptions, width: number, height: number): Shap
     // Each half-side pinches in near its point and bulges toward the middle,
     // with a small jog where the halves meet.
     const [bulge, pinch] = WAVY_DIAMOND[o.ogeeCurve];
-    const half = (u: number) => bulge * Math.sin(Math.PI * u) ** 3 - pinch * Math.sin(Math.PI * u);
+    const half = (u: number) =>
+      bulge * Math.sin(Math.PI * u) ** 3 - pinch * Math.sin(Math.PI * u);
     const profile: Profile = {
-      at: (s) => (s < 0.5 ? half(2 * s) : half(2 - 2 * s) - WAVY_JOG * (2 - 2 * s)),
+      at: (s) =>
+        s < 0.5 ? half(2 * s) : half(2 - 2 * s) - WAVY_JOG * (2 - 2 * s),
       breaks: [0.5],
     };
     outer = join([
@@ -386,7 +458,9 @@ export function buildShape(o: ShapeOptions, width: number, height: number): Shap
     ];
   } else if (style === "fourPoint") {
     const [bulge, pinch] = FOUR_POINT[o.ogeeCurve];
-    const profile = flat((s) => bulge * Math.sin(Math.PI * s) ** 3 - pinch * Math.sin(Math.PI * s));
+    const profile = flat(
+      (s) => bulge * Math.sin(Math.PI * s) ** 3 - pinch * Math.sin(Math.PI * s),
+    );
     outer = join([
       side(L, T, centre, profile),
       side(T, R, centre, profile),
@@ -397,7 +471,9 @@ export function buildShape(o: ShapeOptions, width: number, height: number): Shap
     // Each side pinches in on both halves, leaving a shoulder point midway.
     const pinch = STAR_PINCH[o.ogeeCurve];
     const profile: Profile = {
-      at: (s) => STAR_SHOULDER * Math.sin(Math.PI * s) - pinch * Math.abs(Math.sin(2 * Math.PI * s)),
+      at: (s) =>
+        STAR_SHOULDER * Math.sin(Math.PI * s) -
+        pinch * Math.abs(Math.sin(2 * Math.PI * s)),
       breaks: [0.5],
     };
     outer = join([
@@ -425,15 +501,24 @@ export function buildShape(o: ShapeOptions, width: number, height: number): Shap
     const profile = flat((s) => bow * Math.sin(Math.PI * s));
     lt = side(L, T, centre, profile);
     tr = side(T, R, centre, profile);
-    outer = join([lt, tr, side(R, B, centre, profile), side(B, L, centre, profile)]);
+    outer = join([
+      lt,
+      tr,
+      side(R, B, centre, profile),
+      side(B, L, centre, profile),
+    ]);
   }
 
-  if (open) outer = scalePolygon(outer, centre, 1 + (o.openAmount / 100) * MAX_OPEN);
+  if (open)
+    outer = scalePolygon(outer, centre, 1 + (o.openAmount / 100) * MAX_OPEN);
 
   const offsets = open
-    ? [-1, 0, 1].flatMap((i) => [-1, 0, 1].map((j) => ({ x: i * width, y: j * height })))
+    ? [-1, 0, 1].flatMap((i) =>
+        [-1, 0, 1].map((j) => ({ x: i * width, y: j * height })),
+      )
     : [{ x: 0, y: 0 }];
-  const withCopies = (poly: Vec[]) => offsets.map((t) => translatePolygon(poly, t));
+  const withCopies = (poly: Vec[]) =>
+    offsets.map((t) => translatePolygon(poly, t));
 
   const inner: Vec[][] = [];
   let region = outer;

@@ -6,10 +6,22 @@ const STEP = SIZE / (AXIS + 1);
 
 // Fixed nudges so the Scattered icon reads as tossed but never changes.
 const SCATTER_NUDGE = [
-  [-3, 2], [2, -3], [-1, 3], [3, 1], [-2, -2], [1, 3], [3, -2], [-3, -1], [2, 2],
+  [-3, 2],
+  [2, -3],
+  [-1, 3],
+  [3, 1],
+  [-2, -2],
+  [1, 3],
+  [3, -2],
+  [-3, -1],
+  [2, 2],
 ];
 
-export default function RepeatStylePictograph({ style }: { style: RepeatStyle }) {
+export default function RepeatStylePictograph({
+  style,
+}: {
+  style: RepeatStyle;
+}) {
   if (style === "ogee") {
     return (
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-9 w-9" fill="none">
@@ -18,6 +30,51 @@ export default function RepeatStylePictograph({ style }: { style: RepeatStyle })
           className="stroke-current"
           strokeWidth={2}
         />
+      </svg>
+    );
+  }
+
+  if (style === "mirror") {
+    return (
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-9 w-9" fill="none">
+        <path
+          d="M20 3 V37 M3 20 H37"
+          className="stroke-current"
+          strokeWidth={1}
+          strokeDasharray="2 2"
+        />
+        <path
+          d="M8 8 L16 12 L8 16 Z M32 8 L24 12 L32 16 Z M8 32 L16 28 L8 24 Z M32 32 L24 28 L32 24 Z"
+          className="fill-current"
+        />
+      </svg>
+    );
+  }
+
+  if (style === "ditsy") {
+    const pts = [
+      [6, 7],
+      [15, 4],
+      [26, 8],
+      [35, 5],
+      [10, 15],
+      [21, 14],
+      [31, 17],
+      [5, 23],
+      [16, 22],
+      [27, 25],
+      [36, 26],
+      [9, 31],
+      [20, 30],
+      [30, 34],
+      [14, 37],
+      [24, 20],
+    ];
+    return (
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-9 w-9">
+        {pts.map(([cx, cy], i) => (
+          <circle key={i} cx={cx} cy={cy} r={1.4} className="fill-current" />
+        ))}
       </svg>
     );
   }
@@ -37,7 +94,11 @@ export default function RepeatStylePictograph({ style }: { style: RepeatStyle })
   if (style === "diamond") {
     return (
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-9 w-9" fill="none">
-        <polygon points="20,4 36,20 20,36 4,20" className="stroke-current" strokeWidth={2} />
+        <polygon
+          points="20,4 36,20 20,36 4,20"
+          className="stroke-current"
+          strokeWidth={2}
+        />
         <circle cx={20} cy={14} r={2.5} className="fill-current" />
         <circle cx={14} cy={22} r={2.5} className="fill-current" />
         <circle cx={25} cy={25} r={2.5} className="fill-current" />

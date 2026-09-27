@@ -6,7 +6,11 @@ import LayoutControls from "@/components/LayoutControls";
 import { generateLayout } from "@/lib/layout/generateLayout";
 import { DEFAULT_CLASS_COLORS } from "@/lib/layout/constants";
 import { randomSeed } from "@/lib/layout/rng";
-import { loadTierColors, saveTierColors, type TierColors } from "@/lib/colorPrefs";
+import {
+  loadTierColors,
+  saveTierColors,
+  type TierColors,
+} from "@/lib/colorPrefs";
 import { buildShape } from "@/lib/shapes/shapes";
 import type { CanvasConfig } from "@/lib/units";
 import type { PatternSettings } from "@/lib/layout/types";
@@ -35,7 +39,10 @@ const DEFAULT_SETTINGS: PatternSettings = {
   innerSpacing: 0.08,
 };
 
-export default function PatternEditor({ canvasConfig, onReset }: PatternEditorProps) {
+export default function PatternEditor({
+  canvasConfig,
+  onReset,
+}: PatternEditorProps) {
   const [settings, setSettings] = useState<PatternSettings>(DEFAULT_SETTINGS);
   const [seed, setSeed] = useState(randomSeed);
   const [colors, setColors] = useState<TierColors>(loadTierColors);
@@ -71,7 +78,7 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
               innerSpacing,
             },
             widthPx,
-            heightPx
+            heightPx,
           )
         : null,
     [
@@ -87,7 +94,7 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
       innerSpacing,
       widthPx,
       heightPx,
-    ]
+    ],
   );
 
   const layout = useMemo(
@@ -99,8 +106,14 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
         density: settings.density,
         seed,
         hero: { count: settings.heroCount, color: DEFAULT_CLASS_COLORS.hero },
-        secondary: { count: settings.secondaryCount, color: DEFAULT_CLASS_COLORS.secondary },
-        filler: { count: settings.fillerCount, color: DEFAULT_CLASS_COLORS.filler },
+        secondary: {
+          count: settings.secondaryCount,
+          color: DEFAULT_CLASS_COLORS.secondary,
+        },
+        filler: {
+          count: settings.fillerCount,
+          color: DEFAULT_CLASS_COLORS.filler,
+        },
         shape: shape ?? undefined,
       }),
     [
@@ -113,14 +126,14 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
       settings.fillerCount,
       seed,
       shape,
-    ]
+    ],
   );
 
   // Colors are applied after layout so dragging a color picker doesn't
   // re-run the whole layout on every tick.
   const elements = useMemo(
     () => layout.elements.map((el) => ({ ...el, color: colors[el.class] })),
-    [layout.elements, colors]
+    [layout.elements, colors],
   );
 
   function changeColors(next: TierColors) {
@@ -146,6 +159,7 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
         outlinePx={isOpen ? 0 : settings.outlinePx}
         showEdgeRepeats={settings.showEdgeRepeats}
         trellis={layout.trellis}
+        mirrorAxes={layout.mirrorAxes}
         onReset={onReset}
       />
     </div>
