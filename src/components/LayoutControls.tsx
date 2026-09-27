@@ -19,6 +19,7 @@ const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
   { value: "scattered", label: "Scattered" },
   { value: "half-drop", label: "Half-Drop" },
   { value: "brick", label: "Brick" },
+  { value: "lattice", label: "Lattice" },
   { value: "diamond", label: "Diamond" },
   { value: "ogee", label: "Ogee" },
 ];
@@ -37,7 +38,8 @@ const OGEE_STYLES: { value: OgeeStyle; label: string }[] = [
   { value: "fourPoint", label: "Four-Point" },
   { value: "petalX", label: "Petal X" },
   { value: "notchedSquare", label: "Notched" },
-  { value: "scalloped", label: "Scalloped" },
+  { value: "wavyDiamond", label: "Wavy Diamond" },
+  { value: "badge", label: "Badge" },
 ];
 
 type SetSetting = <K extends keyof PatternSettings>(

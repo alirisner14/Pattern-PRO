@@ -22,6 +22,18 @@ export default function RepeatStylePictograph({ style }: { style: RepeatStyle })
     );
   }
 
+  if (style === "lattice") {
+    return (
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-9 w-9" fill="none">
+        <path
+          d="M4 16 L16 4 M4 36 L36 4 M24 36 L36 24 M4 24 L16 36 M4 4 L36 36 M24 4 L36 16"
+          className="stroke-current"
+          strokeWidth={2}
+        />
+      </svg>
+    );
+  }
+
   if (style === "diamond") {
     return (
       <svg viewBox={`0 0 ${SIZE} ${SIZE}`} className="h-9 w-9" fill="none">

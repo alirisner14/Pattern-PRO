@@ -18,7 +18,8 @@ export type OgeeStyle =
   | "fourPoint"
   | "petalX"
   | "notchedSquare"
-  | "scalloped";
+  | "wavyDiamond"
+  | "badge";
 export type OgeeCurve = "subtle" | "medium" | "deep";
 export type OgeeProportion = "skinny" | "mid" | "wide";
 
@@ -89,7 +90,17 @@ const FOUR_POINT: Record<OgeeCurve, [number, number]> = {
 const PETAL_CUSP: Record<OgeeCurve, number> = { subtle: 0.55, medium: 0.45, deep: 0.35 };
 const PETAL_SAG = 0.18;
 const NOTCH_RADIUS: Record<OgeeCurve, number> = { subtle: 0.12, medium: 0.2, deep: 0.28 };
-const SCALLOP_DEPTH: Record<OgeeCurve, number> = { subtle: 0.06, medium: 0.1, deep: 0.14 };
+// Wavy diamond: [bulge, pinch] per half-side, and the jog where halves meet.
+const WAVY_DIAMOND: Record<OgeeCurve, [number, number]> = {
+  subtle: [0.08, 0.03],
+  medium: [0.11, 0.045],
+  deep: [0.14, 0.06],
+};
+const WAVY_JOG = 0.025;
+// Badge: how far the side points reach, and the ripple before them.
+const BADGE_POINT: Record<OgeeCurve, number> = { subtle: 0.45, medium: 0.55, deep: 0.65 };
+const BADGE_RIPPLE = 0.07;
+const BADGE_CORNER = 0.45;
 const COLUMN_WIDTH: Record<OgeeProportion, number> = { skinny: 0.34, mid: 0.48, wide: 0.67 };
 const OUTLINE_SAMPLES = 256;
 
@@ -266,17 +277,42 @@ function notchedSquare(curve: OgeeCurve): Vec[] {
   );
 }
 
-// Eight scallops with sharp dips between them.
-function scalloped(curve: OgeeCurve): Vec[] {
-  const depth = SCALLOP_DEPTH[curve];
-  const raw = Array.from({ length: OUTLINE_SAMPLES }, (_, i) => {
-    const a = (2 * Math.PI * i) / OUTLINE_SAMPLES;
-    const r = 1 - depth + depth * Math.abs(Math.cos(4 * a));
-    return { x: r * Math.cos(a), y: r * Math.sin(a) };
-  });
-  const wx = Math.max(...raw.map((p) => Math.abs(p.x)));
-  const wy = Math.max(...raw.map((p) => Math.abs(p.y)));
-  return raw.map((p) => ({ x: p.x / wx, y: p.y / wy }));
+// Stretch a unit-ish outline so it touches all four edges of [-1, 1].
+function fitUnit(points: Vec[]): Vec[] {
+  const wx = Math.max(...points.map((p) => Math.abs(p.x)));
+  const wy = Math.max(...points.map((p) => Math.abs(p.y)));
+  return points.map((p) => ({ x: p.x / wx, y: p.y / wy }));
+}
+
+// Top and bottom: two round lobes each. Left and right: a ripple, then a
+// straight run out to a point.
+function badge(curve: OgeeCurve): Vec[] {
+  const c = BADGE_CORNER;
+  const peak = BADGE_POINT[curve];
+  const origin = { x: 0, y: 0 };
+  const lobes: Profile = {
+    at: (s) => 0.5 * arc(s < 0.5 ? 2 * s : 2 * s - 1, 0.5),
+    breaks: [0.5],
+  };
+  const pointed: Profile = {
+    at: (s) => {
+      const u = s < 0.5 ? 2 * s : 2 - 2 * s;
+      return peak * u + BADGE_RIPPLE * Math.sin(2 * Math.PI * u);
+    },
+    breaks: [0.5],
+  };
+  const tl = { x: -c, y: -c };
+  const tr = { x: c, y: -c };
+  const br = { x: c, y: c };
+  const bl = { x: -c, y: c };
+  return fitUnit(
+    join([
+      side(tl, tr, origin, lobes),
+      side(tr, br, origin, pointed),
+      side(br, bl, origin, lobes),
+      side(bl, tl, origin, pointed),
+    ])
+  );
 }
 
 // Half-size of the repeating cell: Mid fills the canvas, Skinny is half as
@@ -322,8 +358,23 @@ export function buildShape(o: ShapeOptions, width: number, height: number): Shap
     outer = fromUnit(petalX(o.ogeeCurve), width, height);
   } else if (style === "notchedSquare") {
     outer = fromUnit(notchedSquare(o.ogeeCurve), width, height);
-  } else if (style === "scalloped") {
-    outer = fromUnit(scalloped(o.ogeeCurve), width, height);
+  } else if (style === "badge") {
+    outer = fromUnit(badge(o.ogeeCurve), width, height);
+  } else if (style === "wavyDiamond") {
+    // Each half-side pinches in near its point and bulges toward the middle,
+    // with a small jog where the halves meet.
+    const [bulge, pinch] = WAVY_DIAMOND[o.ogeeCurve];
+    const half = (u: number) => bulge * Math.sin(Math.PI * u) ** 3 - pinch * Math.sin(Math.PI * u);
+    const profile: Profile = {
+      at: (s) => (s < 0.5 ? half(2 * s) : half(2 - 2 * s) - WAVY_JOG * (2 - 2 * s)),
+      breaks: [0.5],
+    };
+    outer = join([
+      side(L, T, centre, profile),
+      side(T, R, centre, profile),
+      side(R, B, centre, profile),
+      side(B, L, centre, profile),
+    ]);
   } else if (style === "column") {
     // A straight band that runs past the top and bottom, so it wraps.
     const w = (COLUMN_WIDTH[o.ogeeProportion] * width) / 2;

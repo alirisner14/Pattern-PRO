@@ -145,6 +145,7 @@ export default function PatternEditor({ canvasConfig, onReset }: PatternEditorPr
         shape={shape}
         outlinePx={isOpen ? 0 : settings.outlinePx}
         showEdgeRepeats={settings.showEdgeRepeats}
+        trellis={layout.trellis}
         onReset={onReset}
       />
     </div>

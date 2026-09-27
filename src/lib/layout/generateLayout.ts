@@ -1,5 +1,5 @@
 import { mulberry32, type Rng } from "./rng";
-import { buildLattice, type Lattice } from "./lattice";
+import { buildLattice, trellisLineWidth, type Lattice } from "./lattice";
 import {
   clearance,
   latticeDistance,
@@ -12,10 +12,19 @@ import { rectDomain, shapeDomain, type Domain } from "./domain";
 import { signedDistance } from "../shapes/polygon";
 import { fillGaps, roomAt } from "./packing";
 import { RADIUS_RATIO } from "./constants";
-import type { ElementClass, LayoutParams, LayoutResult, PlacedElement } from "./types";
+import type {
+  ElementClass,
+  LayoutParams,
+  LayoutResult,
+  PlacedElement,
+} from "./types";
 
 const CLASS_ORDER: ElementClass[] = ["hero", "secondary", "filler"];
-const CLASS_NUMBER: Record<ElementClass, number> = { hero: 1, secondary: 2, filler: 3 };
+const CLASS_NUMBER: Record<ElementClass, number> = {
+  hero: 1,
+  secondary: 2,
+  filler: 3,
+};
 const CLASS_NAME: Record<ElementClass, string> = {
   hero: "Hero",
   secondary: "Secondary",
@@ -33,6 +42,12 @@ const SCATTER_SAMPLES_PER_ANCHOR = 60;
 // tier with nowhere to go, so it gets at most this many per anchor.
 const MIDDLE_TIER_PER_ANCHOR = 1.25;
 const INRADIUS_SHARE = 0.5;
+// Lattice anchors shrink so the smaller tiers still fit in each diamond's
+// corners without touching the trellis lines.
+const LATTICE_ANCHOR_SHARE = 0.7;
+// A diamond has four corners: one for the middle tier, the rest for the
+// smallest, so the lattice never crowds.
+const LATTICE_CORNERS = 4;
 
 interface Instance extends Circle {
   cls: ElementClass;
@@ -65,8 +80,14 @@ function letterFor(index: number): string {
   return s;
 }
 
-function labelFor(classNumber: number, motif: number, motifCount: number): string {
-  return motifCount === 1 ? String(classNumber) : `${classNumber}${letterFor(motif)}`;
+function labelFor(
+  classNumber: number,
+  motif: number,
+  motifCount: number,
+): string {
+  return motifCount === 1
+    ? String(classNumber)
+    : `${classNumber}${letterFor(motif)}`;
 }
 
 // Grid: solve the smaller tiers' positions once inside a single repeat cell,
@@ -78,7 +99,9 @@ function gridInstances(
   radiusOf: RadiusOf,
   gap: number,
   width: number,
-  height: number
+  height: number,
+  bound?: (p: Vec) => number,
+  corners = Infinity,
 ): Instance[] {
   const dist = latticeDistance(lattice.t1, lattice.t2);
   const { cellW, cellH } = lattice;
@@ -99,8 +122,20 @@ function gridInstances(
   const offsets: Instance[] = [];
   active.slice(1).forEach((cls, i, rest) => {
     const r = radiusOf(cls);
-    const maxCount = i < rest.length - 1 ? Math.floor(MIDDLE_TIER_PER_ANCHOR) : Infinity;
-    for (const p of fillGaps({ candidates, placed, radius: r, gap, dist, step, maxCount })) {
+    const maxCount =
+      i < rest.length - 1
+        ? Math.floor(MIDDLE_TIER_PER_ANCHOR)
+        : Math.max(0, corners - offsets.length);
+    for (const p of fillGaps({
+      candidates,
+      placed,
+      radius: r,
+      gap,
+      dist,
+      step,
+      maxCount,
+      bound,
+    })) {
       offsets.push({ ...p, r, cls });
     }
   });
@@ -109,7 +144,12 @@ function gridInstances(
   for (const a of lattice.anchors) {
     out.push({ ...a, r: radiusOf(anchorCls), cls: anchorCls });
     for (const o of offsets) {
-      out.push({ x: wrap(a.x + o.x, width), y: wrap(a.y + o.y, height), r: o.r, cls: o.cls });
+      out.push({
+        x: wrap(a.x + o.x, width),
+        y: wrap(a.y + o.y, height),
+        r: o.r,
+        cls: o.cls,
+      });
     }
   }
   return out;
@@ -124,7 +164,7 @@ function pinSeams(
   active: ElementClass[],
   radiusOf: RadiusOf,
   gap: number,
-  rng: Rng
+  rng: Rng,
 ): Instance[] {
   const pins: Instance[] = [];
   const pickTier = () => active[Math.floor(rng() * active.length)];
@@ -148,7 +188,10 @@ function pinSeams(
   if (!corner) return pins;
   pin(() => corner, pickTier());
   for (const seam of domain.seamSides) {
-    pin(() => seam[Math.floor((0.2 + 0.6 * rng()) * (seam.length - 1))], pickTier());
+    pin(
+      () => seam[Math.floor((0.2 + 0.6 * rng()) * (seam.length - 1))],
+      pickTier(),
+    );
   }
   return pins;
 }
@@ -163,14 +206,15 @@ function scatteredInstances(
   active: ElementClass[],
   radiusOf: RadiusOf,
   gap: number,
-  rng: Rng
+  rng: Rng,
 ): Instance[] {
   const { dist, normalize, bound } = domain;
   const anchorCls = active[0];
   const rA = radiusOf(anchorCls);
   const maxJitter = SCATTER_JITTER * spacing;
   const pins = pinSeams(domain, active, radiusOf, gap, rng);
-  const pinned = (cls: ElementClass) => pins.filter((p) => p.cls === cls).length;
+  const pinned = (cls: ElementClass) =>
+    pins.filter((p) => p.cls === cls).length;
 
   const count = Math.max(1500, SCATTER_SAMPLES_PER_ANCHOR * anchorCount);
   const candidates = Array.from({ length: count }, () => domain.sample(rng));
@@ -197,7 +241,10 @@ function scatteredInstances(
     for (let attempt = 0; attempt < 12; attempt++) {
       const angle = rng() * Math.PI * 2;
       const d = maxJitter * Math.sqrt(rng());
-      const q = normalize({ x: a.x + Math.cos(angle) * d, y: a.y + Math.sin(angle) * d });
+      const q = normalize({
+        x: a.x + Math.cos(angle) * d,
+        y: a.y + Math.sin(angle) * d,
+      });
       if (roomAt(q, others, dist, bound) >= rA + gap) {
         anchors[k] = { ...q, r: rA };
         break;
@@ -206,15 +253,30 @@ function scatteredInstances(
   }
 
   const placed: Circle[] = [...pins, ...anchors];
-  const out: Instance[] = [...pins, ...anchors.map((a) => ({ ...a, cls: anchorCls }))];
+  const out: Instance[] = [
+    ...pins,
+    ...anchors.map((a) => ({ ...a, cls: anchorCls })),
+  ];
 
   active.slice(1).forEach((cls, i, rest) => {
     const r = radiusOf(cls);
     const maxCount =
       i < rest.length - 1
-        ? Math.max(0, Math.round(MIDDLE_TIER_PER_ANCHOR * anchorCount) - pinned(cls))
+        ? Math.max(
+            0,
+            Math.round(MIDDLE_TIER_PER_ANCHOR * anchorCount) - pinned(cls),
+          )
         : Infinity;
-    for (const p of fillGaps({ candidates, placed, radius: r, gap, dist, step, maxCount, bound })) {
+    for (const p of fillGaps({
+      candidates,
+      placed,
+      radius: r,
+      gap,
+      dist,
+      step,
+      maxCount,
+      bound,
+    })) {
       out.push({ ...normalize(p), r, cls });
     }
   });
@@ -224,7 +286,12 @@ function scatteredInstances(
 // Deal motifs out evenly (each used as close to equally often as possible),
 // and give each placement the motif whose nearest copy is farthest away, so
 // the same motif never bunches up.
-function assignMotifs(members: Vec[], motifCount: number, dist: DistanceFn, rng: Rng): number[] {
+function assignMotifs(
+  members: Vec[],
+  motifCount: number,
+  dist: DistanceFn,
+  rng: Rng,
+): number[] {
   const result = new Array<number>(members.length).fill(0);
   if (motifCount <= 1) return result;
 
@@ -232,7 +299,10 @@ function assignMotifs(members: Vec[], motifCount: number, dist: DistanceFn, rng:
   const copies: Vec[][] = Array.from({ length: motifCount }, () => []);
   const motifOrder = Array.from({ length: motifCount }, (_, i) => i);
 
-  for (const index of shuffle(members.map((_, i) => i), rng)) {
+  for (const index of shuffle(
+    members.map((_, i) => i),
+    rng,
+  )) {
     const p = members[index];
     const leastUsed = Math.min(...usage);
     let choice = -1;
@@ -254,8 +324,18 @@ function assignMotifs(members: Vec[], motifCount: number, dist: DistanceFn, rng:
 }
 
 export function generateLayout(params: LayoutParams): LayoutResult {
-  const { widthPx: width, heightPx: height, repeatStyle, density, seed } = params;
-  const configs = { hero: params.hero, secondary: params.secondary, filler: params.filler };
+  const {
+    widthPx: width,
+    heightPx: height,
+    repeatStyle,
+    density,
+    seed,
+  } = params;
+  const configs = {
+    hero: params.hero,
+    secondary: params.secondary,
+    filler: params.filler,
+  };
   const active = CLASS_ORDER.filter((c) => configs[c].count > 0);
   if (active.length === 0) return { elements: [], warnings: [] };
 
@@ -263,14 +343,20 @@ export function generateLayout(params: LayoutParams): LayoutResult {
   const target = anchorCountForDensity(density);
   const { shape } = params;
   const isFree = !!shape || repeatStyle === "scattered";
-  const domain = shape ? shapeDomain(shape, width, height) : rectDomain(width, height);
-  const lattice = isFree ? null : buildLattice(width, height, repeatStyle, target);
+  const domain = shape
+    ? shapeDomain(shape, width, height)
+    : rectDomain(width, height);
+  const lattice = isFree
+    ? null
+    : buildLattice(width, height, repeatStyle, target);
   // A shape gets anchors in proportion to its share of the canvas; spacing
   // is area-per-anchor either way, so circle sizes match the grids.
   const anchorCount = shape
     ? Math.max(1, Math.round((target * domain.area) / (width * height)))
     : target;
-  const spacing = lattice ? lattice.spacing : Math.sqrt(domain.area / anchorCount);
+  const spacing = lattice
+    ? lattice.spacing
+    : Math.sqrt(domain.area / anchorCount);
 
   // Narrow shapes (a concave diamond's arms) can't hold full-size circles,
   // so cap the anchor at half the shape's inner radius and let the smaller
@@ -279,14 +365,48 @@ export function generateLayout(params: LayoutParams): LayoutResult {
     shape && !shape.regionTiles
       ? signedDistance({ x: width / 2, y: height / 2 }, shape.region)
       : Infinity;
-  const anchorRadius = Math.min(ANCHOR_RADIUS * spacing, INRADIUS_SHARE * inradius);
+  const anchorRadius = Math.min(
+    ANCHOR_RADIUS *
+      spacing *
+      (repeatStyle === "lattice" ? LATTICE_ANCHOR_SHARE : 1),
+    INRADIUS_SHARE * inradius,
+  );
   const radiusOf: RadiusOf = (cls) =>
     (anchorRadius * RADIUS_RATIO[cls]) / RADIUS_RATIO[active[0]];
   const gap = GAP * spacing;
 
+  // Lattice circles stay inside their diamond, clear of the trellis lines.
+  const trellisBound =
+    repeatStyle === "lattice" && lattice
+      ? (p: Vec) => {
+          const ax = 2 / lattice.cellW;
+          const ay = 2 / lattice.cellH;
+          return (
+            (1 - ax * Math.abs(p.x) - ay * Math.abs(p.y)) / Math.hypot(ax, ay) -
+            trellisLineWidth(width, height) / 2
+          );
+        }
+      : undefined;
   const instances = lattice
-    ? gridInstances(lattice, active, radiusOf, gap, width, height)
-    : scatteredInstances(anchorCount, spacing, domain, active, radiusOf, gap, rng);
+    ? gridInstances(
+        lattice,
+        active,
+        radiusOf,
+        gap,
+        width,
+        height,
+        trellisBound,
+        trellisBound ? LATTICE_CORNERS : Infinity,
+      )
+    : scatteredInstances(
+        anchorCount,
+        spacing,
+        domain,
+        active,
+        radiusOf,
+        gap,
+        rng,
+      );
 
   const dist = domain.dist;
   const elements: PlacedElement[] = [];
@@ -297,7 +417,7 @@ export function generateLayout(params: LayoutParams): LayoutResult {
     const motifCount = configs[cls].count;
     if (members.length < motifCount) {
       warnings.push(
-        `${CLASS_NAME[cls]}: ${motifCount} motifs but only ${members.length} spots fit. Raise Density or lower the count.`
+        `${CLASS_NAME[cls]}: ${motifCount} motifs but only ${members.length} spots fit. Raise Density or lower the count.`,
       );
     }
     const motifs = assignMotifs(members, motifCount, dist, rng);
@@ -316,5 +436,12 @@ export function generateLayout(params: LayoutParams): LayoutResult {
     });
   }
 
-  return { elements, warnings };
+  return {
+    elements,
+    warnings,
+    trellis:
+      repeatStyle === "lattice" && lattice
+        ? { cellW: lattice.cellW, cellH: lattice.cellH }
+        : undefined,
+  };
 }

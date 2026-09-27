@@ -8,7 +8,14 @@ import type {
   ShapeSides,
 } from "../shapes/shapes";
 
-export type RepeatStyle = "grid" | "scattered" | "half-drop" | "brick" | "diamond" | "ogee";
+export type RepeatStyle =
+  | "grid"
+  | "scattered"
+  | "half-drop"
+  | "brick"
+  | "lattice"
+  | "diamond"
+  | "ogee";
 
 export interface ElementClassConfig {
   count: number;
@@ -42,6 +49,8 @@ export interface PlacedElement {
 
 export interface LayoutResult {
   elements: PlacedElement[];
+  // Lattice: the trellis cell size, for drawing its lines.
+  trellis?: { cellW: number; cellH: number };
   warnings: string[];
 }
 
