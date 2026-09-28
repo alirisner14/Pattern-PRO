@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ISSUE_COLORS,
   ISSUE_NAMES,
@@ -11,31 +11,13 @@ import {
 import PatternPreview from "@/components/checker/PatternPreview";
 import DownloadPanel from "@/components/checker/DownloadPanel";
 
-type LayerId = "main" | "middle" | "back";
+// The flow once a finished design comes back: background colour (only when
+// it's transparent), check, then scale and export.
+type Step = "background" | "check" | "export";
 
-interface Layer {
-  image: HTMLImageElement | null;
-  name: string;
-  // How many times the layer repeats across the tile, each way. Fewer
-  // repeats = larger elements.
-  repeats: number;
-  opacity: number;
-}
-
-const LAYER_LABELS: Record<LayerId, string> = {
-  main: "Main pattern (top)",
-  middle: "Background pattern 1 (middle)",
-  back: "Background pattern 2 (back)",
-};
-// Drawn back to front.
-const DRAW_ORDER: LayerId[] = ["back", "middle", "main"];
-
-const emptyLayer = (): Layer => ({
-  image: null,
-  name: "",
-  repeats: 1,
-  opacity: 1,
-});
+// Scale steps: each one shrinks the design to a quarter and puts it in all
+// four corners, so the design repeats 1, 2, 4 or 8 times each way.
+const SCALE_STEPS = [1, 2, 4, 8];
 
 const buttonClass =
   "rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800";
@@ -44,19 +26,31 @@ const primaryClass =
 
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => resolve(img);
     img.onerror = () =>
       reject(new Error("That file couldn't be opened as an image."));
-    img.src = url;
+    img.src = URL.createObjectURL(file);
   });
 }
 
-// Flatten the layers into one tile the size of the main pattern.
-export function compose(
-  layers: Record<LayerId, Layer>,
+function hasTransparency(img: HTMLImageElement): boolean {
+  const canvas = document.createElement("canvas");
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  ctx.drawImage(img, 0, 0);
+  const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+  for (let i = 3; i < data.length; i += 4) if (data[i] < 250) return true;
+  return false;
+}
+
+// The design, over its background colour if it needs one, repeated n × n
+// into a canvas of the given size.
+function render(
+  img: HTMLImageElement,
   background: string | null,
+  repeats: number,
   width: number,
   height: number,
 ): HTMLCanvasElement {
@@ -69,91 +63,115 @@ export function compose(
     ctx.fillStyle = background;
     ctx.fillRect(0, 0, width, height);
   }
-  for (const id of DRAW_ORDER) {
-    const layer = layers[id];
-    if (!layer.image) continue;
-    ctx.globalAlpha = layer.opacity;
-    const n = id === "main" ? 1 : layer.repeats;
-    const w = width / n;
-    const h = height / n;
-    for (let i = 0; i < n; i++) {
-      for (let j = 0; j < n; j++)
-        ctx.drawImage(layer.image, i * w, j * h, w, h);
-    }
+  const w = width / repeats;
+  const h = height / repeats;
+  for (let i = 0; i < repeats; i++) {
+    for (let j = 0; j < repeats; j++) ctx.drawImage(img, i * w, j * h, w, h);
   }
-  ctx.globalAlpha = 1;
   return canvas;
 }
 
+function StepBadge({
+  n,
+  label,
+  active,
+  done,
+}: {
+  n: number;
+  label: string;
+  active: boolean;
+  done: boolean;
+}) {
+  return (
+    <li
+      className={`flex items-center gap-2 text-sm ${
+        active
+          ? "font-semibold text-zinc-900 dark:text-zinc-50"
+          : "text-zinc-400 dark:text-zinc-500"
+      }`}
+    >
+      <span
+        className={`flex h-6 w-6 items-center justify-center rounded-full text-xs ${
+          active
+            ? "bg-zinc-900 text-white dark:bg-zinc-50 dark:text-zinc-900"
+            : done
+              ? "bg-zinc-300 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200"
+              : "border border-zinc-300 dark:border-zinc-700"
+        }`}
+      >
+        {done && !active ? "✓" : n}
+      </span>
+      {label}
+    </li>
+  );
+}
+
 export default function PatternChecker() {
-  const [layers, setLayers] = useState<Record<LayerId, Layer>>({
-    main: emptyLayer(),
-    middle: emptyLayer(),
-    back: emptyLayer(),
-  });
-  const [useBackground, setUseBackground] = useState(true);
+  const [image, setImage] = useState<HTMLImageElement | null>(null);
+  const [fileName, setFileName] = useState("");
+  const [transparent, setTransparent] = useState(false);
   const [background, setBackground] = useState("#ffffff");
+  const [step, setStep] = useState<Step>("check");
   const [error, setError] = useState<string | null>(null);
-  // Each result remembers which composition it scored, so a stale result is
-  // never shown against a changed pattern.
+  const [hidden, setHidden] = useState<Set<IssueKind>>(new Set());
+  const [scale, setScale] = useState(1);
   const [result, setResult] = useState<{
     of: HTMLCanvasElement;
     analysis: Analysis;
   } | null>(null);
-  const [hidden, setHidden] = useState<Set<IssueKind>>(new Set());
-  const [proceeding, setProceeding] = useState(false);
-  const [reworkNote, setReworkNote] = useState(false);
 
-  // The tile takes the main pattern's pixel size (or the first layer added).
-  const base = layers.main.image ?? layers.middle.image ?? layers.back.image;
-  const tileW = base?.naturalWidth ?? 0;
-  const tileH = base?.naturalHeight ?? 0;
-
-  const composite = useMemo(
+  // The design as it will repeat: over the chosen colour when transparent.
+  const design = useMemo(
     () =>
-      base
-        ? compose(layers, useBackground ? background : null, tileW, tileH)
+      image
+        ? render(
+            image,
+            transparent ? background : null,
+            1,
+            image.naturalWidth,
+            image.naturalHeight,
+          )
         : null,
-    [base, layers, useBackground, background, tileW, tileH],
+    [image, transparent, background],
   );
 
-  // Re-check whenever the composition changes. Scoring always looks at the
-  // pattern over a solid colour so transparent areas read as empty space.
+  // Score whenever the design changes. Transparent areas are judged against
+  // the background colour so they read as empty space.
   useEffect(() => {
-    if (!composite) return;
+    if (!design || !image) return;
     const timer = window.setTimeout(() => {
-      const flat = document.createElement("canvas");
-      flat.width = composite.width;
-      flat.height = composite.height;
+      const flat = render(
+        image,
+        transparent ? background : "#ffffff",
+        1,
+        design.width,
+        design.height,
+      );
       const ctx = flat.getContext("2d", { willReadFrequently: true })!;
-      ctx.fillStyle = useBackground ? background : "#ffffff";
-      ctx.fillRect(0, 0, flat.width, flat.height);
-      ctx.drawImage(composite, 0, 0);
       setResult({
-        of: composite,
+        of: design,
         analysis: analyzePattern(
           ctx.getImageData(0, 0, flat.width, flat.height),
         ),
       });
     }, 50);
     return () => window.clearTimeout(timer);
-  }, [composite, useBackground, background]);
+  }, [design, image, transparent, background]);
 
-  const analysis = result && result.of === composite ? result.analysis : null;
-  const checking = !!composite && !analysis;
+  const analysis = result && result.of === design ? result.analysis : null;
 
-  const setLayer = useCallback((id: LayerId, patch: Partial<Layer>) => {
-    setLayers((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
-    setProceeding(false);
-    setReworkNote(false);
-  }, []);
-
-  async function upload(id: LayerId, file: File | undefined) {
+  async function upload(file: File | undefined) {
     if (!file) return;
     try {
-      const image = await loadImage(file);
+      const img = await loadImage(file);
+      const clear = hasTransparency(img);
       setError(null);
-      setLayer(id, { image, name: file.name });
+      setImage(img);
+      setFileName(file.name);
+      setTransparent(clear);
+      setStep(clear ? "background" : "check");
+      setScale(1);
+      setHidden(new Set());
     } catch (e) {
       setError((e as Error).message);
     }
@@ -168,263 +186,232 @@ export default function PatternChecker() {
     });
   }
 
+  const uploadButton = (label: string) => (
+    <label className={`${primaryClass} cursor-pointer`}>
+      {label}
+      <input
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          upload(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+      />
+    </label>
+  );
+
+  if (!image || !design) {
+    return (
+      <div className="flex flex-1 items-center justify-center px-4">
+        <div className="flex w-full max-w-md flex-col items-start gap-3 rounded-xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            Check your design
+          </h1>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400">
+            Upload the finished, flattened pattern tile (PNG, transparent or
+            with a background). It&apos;s checked for seams, hairline gaps,
+            spacing and balance before you scale and export it.
+          </p>
+          {uploadButton("Upload design")}
+          {error && (
+            <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const steps: { id: Step; label: string }[] = [
+    ...(transparent
+      ? [{ id: "background" as Step, label: "Background colour" }]
+      : []),
+    { id: "check", label: "Check" },
+    { id: "export", label: "Scale & export" },
+  ];
+  const stepIndex = steps.findIndex((s) => s.id === step);
   const visibleIssues =
-    analysis?.issues.filter((i) => !hidden.has(i.kind)) ?? [];
-  const kinds = [...new Set(analysis?.issues.map((i) => i.kind) ?? [])];
+    step === "check"
+      ? (analysis?.issues.filter((i) => !hidden.has(i.kind)) ?? [])
+      : [];
 
   return (
     <div className="flex min-h-0 flex-1 overflow-hidden">
-      <aside className="flex w-72 shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-200 p-4 dark:border-zinc-800">
-        <div>
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-            Layers
-          </h2>
-          <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
-            Upload a finished pattern tile. Background patterns are optional.
-          </p>
-        </div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <PatternPreview
+          source={design}
+          issues={visibleIssues}
+          transparent={false}
+          steps={step === "export" ? SCALE_STEPS : undefined}
+          repeats={scale}
+          onRepeatsChange={setScale}
+        />
+      </div>
 
-        {(["main", "middle", "back"] as LayerId[]).map((id) => {
-          const layer = layers[id];
-          return (
-            <div key={id} className="flex flex-col gap-2">
-              <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                {LAYER_LABELS[id]}
-              </span>
-              <div className="flex items-center gap-2">
-                <label className={`${buttonClass} cursor-pointer`}>
-                  {layer.image ? "Replace" : "Upload"}
-                  <input
-                    type="file"
-                    accept="image/png,image/jpeg,image/webp"
-                    className="hidden"
-                    onChange={(e) => {
-                      upload(id, e.target.files?.[0]);
-                      e.target.value = "";
-                    }}
-                  />
-                </label>
-                {layer.image && (
-                  <button
-                    className={buttonClass}
-                    onClick={() => setLayer(id, emptyLayer())}
-                  >
-                    Remove
-                  </button>
-                )}
-              </div>
-              {layer.image && (
-                <>
-                  <span className="truncate text-xs text-zinc-400 dark:text-zinc-500">
-                    {layer.name} · {layer.image.naturalWidth} ×{" "}
-                    {layer.image.naturalHeight} px
-                  </span>
-                  {id !== "main" && (
-                    <label className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
-                      <span className="flex justify-between">
-                        Repeats across the tile
-                        <span>
-                          {layer.repeats} × {layer.repeats}
-                        </span>
-                      </span>
-                      <input
-                        type="range"
-                        min={1}
-                        max={8}
-                        step={1}
-                        value={layer.repeats}
-                        onChange={(e) =>
-                          setLayer(id, { repeats: Number(e.target.value) })
-                        }
-                      />
-                    </label>
-                  )}
-                  <label className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
-                    <span className="flex justify-between">
-                      Opacity
-                      <span>{Math.round(layer.opacity * 100)}%</span>
-                    </span>
-                    <input
-                      type="range"
-                      min={0.05}
-                      max={1}
-                      step={0.05}
-                      value={layer.opacity}
-                      onChange={(e) =>
-                        setLayer(id, { opacity: Number(e.target.value) })
-                      }
-                    />
-                  </label>
-                </>
-              )}
-            </div>
-          );
-        })}
-
-        <div className="flex flex-col gap-2">
-          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
-            Background colour
-          </span>
-          <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-            <input
-              type="checkbox"
-              checked={useBackground}
-              onChange={(e) => setUseBackground(e.target.checked)}
+      <aside className="flex w-80 shrink-0 flex-col gap-4 overflow-y-auto border-l border-zinc-200 p-4 dark:border-zinc-800">
+        <ol className="flex flex-col gap-2">
+          {steps.map((s, i) => (
+            <StepBadge
+              key={s.id}
+              n={i + 1}
+              label={s.label}
+              active={s.id === step}
+              done={i < stepIndex}
             />
-            Fill behind the layers
-          </label>
-          {useBackground && (
+          ))}
+        </ol>
+        <p className="truncate text-xs text-zinc-400 dark:text-zinc-500">
+          {fileName} · {image.naturalWidth} × {image.naturalHeight} px
+        </p>
+
+        {step === "background" && (
+          <div className="flex flex-col gap-3">
+            <p className="text-sm text-zinc-700 dark:text-zinc-300">
+              Your design is transparent. Pick the colour that goes behind it.
+            </p>
             <input
               type="color"
               aria-label="Background colour"
               value={background}
               onChange={(e) => setBackground(e.target.value)}
-              className="h-8 w-14 cursor-pointer rounded border border-zinc-300 bg-transparent p-0.5 dark:border-zinc-700"
+              className="h-10 w-20 cursor-pointer rounded border border-zinc-300 bg-transparent p-0.5 dark:border-zinc-700"
             />
-          )}
-        </div>
-
-        {error && (
-          <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
-        )}
-      </aside>
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {composite ? (
-          <PatternPreview
-            source={composite}
-            issues={visibleIssues}
-            transparent={!useBackground}
-          />
-        ) : (
-          <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-zinc-500 dark:text-zinc-400">
-            Upload your main pattern tile to check how it repeats.
+            <button className={primaryClass} onClick={() => setStep("check")}>
+              Next: check
+            </button>
           </div>
         )}
-      </div>
 
-      {composite && (
-        <aside className="flex w-80 shrink-0 flex-col gap-4 overflow-y-auto border-l border-zinc-200 p-4 dark:border-zinc-800">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              Score sheet
-            </h2>
-            {checking && (
-              <span className="text-xs text-zinc-400">Checking…</span>
-            )}
-          </div>
+        {step === "check" && (
+          <>
+            {!analysis ? (
+              <p className="text-sm text-zinc-400">Checking…</p>
+            ) : (
+              <>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-4xl font-semibold text-zinc-900 dark:text-zinc-50">
+                    {analysis.overall}
+                  </span>
+                  <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                    / 100 overall
+                  </span>
+                </div>
 
-          {analysis && (
-            <>
-              <div className="flex items-baseline gap-2">
-                <span className="text-4xl font-semibold text-zinc-900 dark:text-zinc-50">
-                  {analysis.overall}
-                </span>
-                <span className="text-sm text-zinc-500 dark:text-zinc-400">
-                  / 100 overall
-                </span>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                {analysis.scores.map((s) => (
-                  <div key={s.name}>
-                    <div className="flex justify-between text-sm text-zinc-700 dark:text-zinc-300">
-                      <span>{s.name}</span>
-                      <span>{s.score}</span>
+                <div className="flex flex-col gap-3">
+                  {analysis.scores.map((s) => (
+                    <div key={s.name}>
+                      <div className="flex justify-between text-sm text-zinc-700 dark:text-zinc-300">
+                        <span>{s.name}</span>
+                        <span>{s.score}</span>
+                      </div>
+                      <div className="mt-1 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800">
+                        <div
+                          className="h-1.5 rounded-full bg-zinc-900 dark:bg-zinc-100"
+                          style={{ width: `${s.score}%` }}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                        {s.summary}
+                      </p>
                     </div>
-                    <div className="mt-1 h-1.5 rounded-full bg-zinc-200 dark:bg-zinc-800">
-                      <div
-                        className="h-1.5 rounded-full bg-zinc-900 dark:bg-zinc-100"
-                        style={{ width: `${s.score}%` }}
-                      />
-                    </div>
-                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                      {s.summary}
+                  ))}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                    {analysis.issues.length ? "Found" : "No problems found"}
+                  </h3>
+                  {analysis.issues.length > 0 && (
+                    <p className="text-xs text-zinc-400 dark:text-zinc-500">
+                      Tap an item to show or hide its highlights.
                     </p>
+                  )}
+                  {analysis.issues.map((issue, i) => (
+                    <button
+                      key={i}
+                      onClick={() => toggleKind(issue.kind)}
+                      className={`flex gap-2 rounded-md border border-zinc-200 p-2 text-left dark:border-zinc-800 ${
+                        hidden.has(issue.kind) ? "opacity-40" : ""
+                      }`}
+                    >
+                      <span
+                        className="mt-0.5 h-3 w-3 shrink-0 rounded-sm"
+                        style={{ background: ISSUE_COLORS[issue.kind] }}
+                      />
+                      <span className="text-xs text-zinc-700 dark:text-zinc-300">
+                        <span className="font-medium">
+                          {ISSUE_NAMES[issue.kind]}:
+                        </span>{" "}
+                        {issue.detail}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <p className="text-sm text-zinc-700 dark:text-zinc-300">
+                    Rework the design, or move forward?
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {uploadButton("Rework: upload new version")}
+                    <button
+                      className={buttonClass}
+                      onClick={() => setStep("export")}
+                    >
+                      Move forward
+                    </button>
                   </div>
-                ))}
-                <div>
-                  <div className="text-sm text-zinc-700 dark:text-zinc-300">
-                    Print size
-                  </div>
-                  <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                    {tileW} × {tileH} px prints at {(tileW / 300).toFixed(2)} ×{" "}
-                    {(tileH / 300).toFixed(2)} in at 300 DPI without enlarging.
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    To rework, fix the highlighted spots in your art app and
+                    upload the new version — it&apos;s checked again
+                    automatically.
                   </p>
                 </div>
-              </div>
+              </>
+            )}
+          </>
+        )}
 
-              <div className="flex flex-col gap-2">
-                <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                  {analysis.issues.length ? "Found" : "No problems found"}
-                </h3>
-                {kinds.length > 0 && (
-                  <p className="text-xs text-zinc-400 dark:text-zinc-500">
-                    Tap a colour to show or hide its highlights.
-                  </p>
-                )}
-                {analysis.issues.map((issue, i) => (
+        {step === "export" && (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                Scale
+              </span>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Each step shrinks the design to a quarter and repeats it in all
+                four corners.
+              </p>
+              <div className="grid grid-cols-4 gap-2">
+                {SCALE_STEPS.map((n) => (
                   <button
-                    key={i}
-                    onClick={() => toggleKind(issue.kind)}
-                    className={`flex gap-2 rounded-md border border-zinc-200 p-2 text-left dark:border-zinc-800 ${
-                      hidden.has(issue.kind) ? "opacity-40" : ""
+                    key={n}
+                    onClick={() => setScale(n)}
+                    className={`rounded-md border px-2 py-1.5 text-sm ${
+                      scale === n
+                        ? "border-zinc-900 bg-zinc-100 text-zinc-900 dark:border-zinc-50 dark:bg-zinc-800 dark:text-zinc-50"
+                        : "border-zinc-200 text-zinc-500 dark:border-zinc-700 dark:text-zinc-400"
                     }`}
                   >
-                    <span
-                      className="mt-0.5 h-3 w-3 shrink-0 rounded-sm"
-                      style={{ background: ISSUE_COLORS[issue.kind] }}
-                    />
-                    <span className="text-xs text-zinc-700 dark:text-zinc-300">
-                      <span className="font-medium">
-                        {ISSUE_NAMES[issue.kind]}:
-                      </span>{" "}
-                      {issue.detail}
-                    </span>
+                    {n} × {n}
                   </button>
                 ))}
               </div>
-
-              {!proceeding ? (
-                <div className="flex flex-col gap-2">
-                  <p className="text-sm text-zinc-700 dark:text-zinc-300">
-                    Rework the pattern, or proceed to download?
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      className={buttonClass}
-                      onClick={() => setReworkNote(true)}
-                    >
-                      Rework
-                    </button>
-                    <button
-                      className={primaryClass}
-                      onClick={() => setProceeding(true)}
-                    >
-                      Proceed
-                    </button>
-                  </div>
-                  {reworkNote && (
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                      Fix the highlighted spots in your art app, then use
-                      Replace on the layer to upload the new version —
-                      it&apos;ll be checked again automatically.
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <DownloadPanel
-                  tileW={tileW}
-                  tileH={tileH}
-                  render={(w, h) =>
-                    compose(layers, useBackground ? background : null, w, h)
-                  }
-                />
-              )}
-            </>
-          )}
-        </aside>
-      )}
+            </div>
+            <DownloadPanel
+              tileW={image.naturalWidth}
+              tileH={image.naturalHeight}
+              repeats={scale}
+              render={(w, h) =>
+                render(image, transparent ? background : null, scale, w, h)
+              }
+            />
+            <button className={buttonClass} onClick={() => setStep("check")}>
+              ← Back to the score sheet
+            </button>
+          </div>
+        )}
+      </aside>
     </div>
   );
 }

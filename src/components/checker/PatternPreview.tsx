@@ -7,6 +7,11 @@ interface PatternPreviewProps {
   source: HTMLCanvasElement;
   issues: Issue[];
   transparent: boolean;
+  // When set, the preview follows these fixed scale steps (export) instead
+  // of the free Repeats slider.
+  steps?: number[];
+  repeats?: number;
+  onRepeatsChange?: (n: number) => void;
 }
 
 const MAX_REPEATS = 10;
@@ -172,12 +177,38 @@ function TiledView({
 function RepeatControl({
   repeats,
   onChange,
+  steps,
   dark,
 }: {
   repeats: number;
   onChange: (n: number) => void;
+  steps?: number[];
   dark?: boolean;
 }) {
+  if (steps) {
+    return (
+      <div
+        className={`flex flex-1 items-center gap-2 text-sm ${dark ? "text-zinc-200" : "text-zinc-700 dark:text-zinc-300"}`}
+      >
+        <span className="shrink-0">Scale</span>
+        {steps.map((n) => (
+          <button
+            key={n}
+            onClick={() => onChange(n)}
+            className={`rounded-md border px-3 py-1 ${
+              repeats === n
+                ? dark
+                  ? "border-zinc-50 bg-zinc-800 text-zinc-50"
+                  : "border-zinc-900 bg-zinc-100 text-zinc-900 dark:border-zinc-50 dark:bg-zinc-800 dark:text-zinc-50"
+                : "border-zinc-600 text-zinc-400"
+            }`}
+          >
+            {n} × {n}
+          </button>
+        ))}
+      </div>
+    );
+  }
   return (
     <label
       className={`flex flex-1 items-center gap-3 text-sm ${dark ? "text-zinc-200" : "text-zinc-700 dark:text-zinc-300"}`}
@@ -200,7 +231,11 @@ function RepeatControl({
 }
 
 export default function PatternPreview(props: PatternPreviewProps) {
-  const [repeats, setRepeats] = useState(1);
+  const [freeRepeats, setFreeRepeats] = useState(1);
+  const repeats = props.steps ? (props.repeats ?? 1) : freeRepeats;
+  const setRepeats = props.steps
+    ? (props.onRepeatsChange ?? (() => {}))
+    : setFreeRepeats;
   const [fullScreen, setFullScreen] = useState(false);
   const overlayRef = useRef<HTMLDivElement>(null);
 
@@ -235,7 +270,11 @@ export default function PatternPreview(props: PatternPreviewProps) {
       <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
         <TiledView {...props} repeats={repeats} />
         <div className="flex items-center gap-3">
-          <RepeatControl repeats={repeats} onChange={setRepeats} />
+          <RepeatControl
+            repeats={repeats}
+            onChange={setRepeats}
+            steps={props.steps}
+          />
           <button
             onClick={() => setFullScreen(true)}
             className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
@@ -254,7 +293,12 @@ export default function PatternPreview(props: PatternPreviewProps) {
             <TiledView {...props} repeats={repeats} />
           </div>
           <div className="flex items-center gap-4 border-t border-zinc-800 bg-zinc-900 px-4 py-3">
-            <RepeatControl repeats={repeats} onChange={setRepeats} dark />
+            <RepeatControl
+              repeats={repeats}
+              onChange={setRepeats}
+              steps={props.steps}
+              dark
+            />
             <button
               onClick={() => setFullScreen(false)}
               className="rounded-md bg-zinc-50 px-4 py-2 text-sm font-medium text-zinc-900"

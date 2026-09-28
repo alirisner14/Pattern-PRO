@@ -6,6 +6,8 @@ import { withDpi } from "@/lib/check/png";
 interface DownloadPanelProps {
   tileW: number;
   tileH: number;
+  // How many times the design repeats each way in the export.
+  repeats: number;
   render: (width: number, height: number) => HTMLCanvasElement;
 }
 
@@ -18,6 +20,7 @@ const inputClass =
 export default function DownloadPanel({
   tileW,
   tileH,
+  repeats,
   render,
 }: DownloadPanelProps) {
   const [width, setWidth] = useState(tileW);
@@ -27,7 +30,9 @@ export default function DownloadPanel({
   const aspect = tileH / tileW;
 
   const valid = width > 0 && height > 0 && dpi > 0;
-  const enlarged = width > tileW || height > tileH;
+  // Each repeat is drawn from the original, so only a repeat bigger than
+  // the original loses sharpness.
+  const enlarged = width / repeats > tileW || height / repeats > tileH;
   const tooBig = width * height > MAX_PIXELS;
 
   async function download() {
@@ -56,8 +61,8 @@ export default function DownloadPanel({
         Download
       </h3>
       <p className="text-xs text-zinc-500 dark:text-zinc-400">
-        One flattened PNG. The default keeps every original pixel, set for 300
-        DPI print.
+        One flattened PNG at the canvas size and DPI you choose. Each repeat is
+        drawn from your original design.
       </p>
       <div className="grid grid-cols-3 gap-2">
         <label className="flex flex-col gap-1 text-xs text-zinc-600 dark:text-zinc-400">
@@ -106,9 +111,9 @@ export default function DownloadPanel({
       )}
       {enlarged && (
         <p className="text-xs text-amber-600 dark:text-amber-400">
-          This is larger than your artwork ({tileW} × {tileH} px). Enlarging
-          can&apos;t add detail, so edges may look soft. To print bigger without
-          softening, keep the original pixel size and lower the DPI instead.
+          At this size each repeat is larger than your artwork ({tileW} ×{" "}
+          {tileH} px). Enlarging can&apos;t add detail, so edges may look soft.
+          Choose a smaller canvas or a bigger scale step for the sharpest print.
         </p>
       )}
       {tooBig && (

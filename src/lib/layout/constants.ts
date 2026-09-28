@@ -1,9 +1,10 @@
 import type { ElementClass } from "./types";
 
+// Taken from the Pattern PRO logo.
 export const DEFAULT_CLASS_COLORS: Record<ElementClass, string> = {
-  hero: "#ff2e93",
-  secondary: "#00c2b8",
-  filler: "#8b3dff",
+  hero: "#ff5a86",
+  secondary: "#b500ff",
+  filler: "#00ffd1",
 };
 
 // Circle size of each tier relative to the Hero tier.
