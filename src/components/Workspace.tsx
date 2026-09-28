@@ -133,6 +133,31 @@ function Watermark({ w, h }: { w: number; h: number }) {
   );
 }
 
+// Labels in light tier colours (the aqua filler) wash out on the light
+// canvas, so darken a label's colour until it has enough contrast on white.
+// The circle itself keeps the exact colour.
+function luminance(r: number, g: number, b: number): number {
+  const lin = (v: number) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+function readableLabel(hex: string): string {
+  let r = parseInt(hex.slice(1, 3), 16);
+  let g = parseInt(hex.slice(3, 5), 16);
+  let b = parseInt(hex.slice(5, 7), 16);
+  // Contrast ratio against white of at least 3:1 (large text).
+  while (1.05 / (luminance(r, g, b) + 0.05) < 3) {
+    r *= 0.9;
+    g *= 0.9;
+    b *= 0.9;
+  }
+  const h = (v: number) => Math.round(v).toString(16).padStart(2, "0");
+  return `#${h(r)}${h(g)}${h(b)}`;
+}
+
 // Spacing between dots on a dotted outline, adjusted so a whole number of
 // dots fits the circumference and there's no uneven seam where it closes.
 function dotGap(r: number, dotSize: number): number {
@@ -358,7 +383,7 @@ export default function Workspace({
                   <text
                     x={c.labelX}
                     y={c.labelY}
-                    fill={c.color}
+                    fill={readableLabel(c.color)}
                     fontSize={c.fontSize}
                     fontWeight={600}
                     fontFamily="ui-sans-serif, system-ui, sans-serif"
