@@ -50,6 +50,11 @@ const LATTICE_ANCHOR_SHARE = 0.7;
 const LATTICE_CORNERS = 4;
 // Upper bound on improvement passes when spreading motifs apart.
 const MOTIF_PASSES = 30;
+// Shifts tried per axis when moving the layout to avoid edge slivers.
+const SLIVER_SHIFT_STEPS = 12;
+// Rotation: neighbours compared against, and candidate angles tried.
+const ANGLE_NEIGHBOURS = 6;
+const ANGLE_CANDIDATES = 24;
 // Spacing relaxation: rounds, and the share of the area the circles (plus
 // half the gap around each) should fill.
 const RELAX_ITERATIONS = 80;
@@ -438,6 +443,144 @@ function overlappingInstances(
   return out;
 }
 
+// How much of an element pokes across an edge it straddles: a piece
+// narrower than this share of its radius reads as a sliver.
+const SLIVER_SHARE = 0.35;
+
+// Total sliver badness: for every element crossing an edge (or a tiling
+// shape's outline), how far its far-side piece falls short of a decent size.
+function sliverScore(items: Circle[], inset: (p: Vec) => number[]): number {
+  let score = 0;
+  for (const it of items) {
+    for (const d of inset(it)) {
+      const piece = it.r - d;
+      if (piece > 0 && piece < SLIVER_SHARE * it.r) {
+        score += (SLIVER_SHARE * it.r - piece) / it.r;
+      }
+    }
+  }
+  return score;
+}
+
+// The layout repeats, so shifting every element by the same amount keeps it
+// seamless and keeps every spacing exactly as it was. Try a range of shifts
+// and keep the one that leaves the fewest slivers at the edges; then, for
+// free layouts, nudge any element still leaving a sliver either fully inside
+// or clearly across.
+function avoidSlivers(
+  items: Instance[],
+  domain: Domain,
+  shape: LayoutParams["shape"],
+  width: number,
+  height: number,
+  spacing: number,
+  gap: number,
+  free: boolean,
+): Instance[] {
+  if (domain.bound) return items; // Kept inside a shape: nothing crosses.
+  const tiles = !!shape?.regionTiles;
+  const inset = tiles
+    ? (p: Vec) => [signedDistance(p, shape!.region)]
+    : (p: Vec) => [Math.min(p.x, width - p.x), Math.min(p.y, height - p.y)];
+  const shift = (dx: number, dy: number) =>
+    items.map((it) => ({
+      ...it,
+      ...domain.normalize({ x: it.x + dx, y: it.y + dy }),
+    }));
+
+  let best = items;
+  let bestScore = sliverScore(items, inset);
+  const steps = SLIVER_SHIFT_STEPS;
+  for (let a = 0; a < steps && bestScore > 0; a++) {
+    for (let b = 0; b < steps && bestScore > 0; b++) {
+      if (!a && !b) continue;
+      let dx: number;
+      let dy: number;
+      if (tiles) {
+        const [t1, t2] = shape!.translations;
+        dx = (a / steps) * t1.x + (b / steps) * t2.x;
+        dy = (a / steps) * t1.y + (b / steps) * t2.y;
+      } else {
+        dx = (a / steps) * spacing;
+        dy = (b / steps) * spacing;
+      }
+      const moved = shift(dx, dy);
+      const score = sliverScore(moved, inset);
+      if (score < bestScore - 1e-9) {
+        best = moved;
+        bestScore = score;
+      }
+    }
+  }
+  if (!free || tiles || bestScore === 0) return best;
+
+  // Nudge leftovers along the axis they cross.
+  const out = best.map((it) => ({ ...it }));
+  for (let i = 0; i < out.length; i++) {
+    const it = out[i];
+    for (const axis of ["x", "y"] as const) {
+      const size = axis === "x" ? width : height;
+      const v = it[axis];
+      const d = Math.min(v, size - v);
+      const piece = it.r - d;
+      if (!(piece > 0 && piece < SLIVER_SHARE * it.r)) continue;
+      const nearLow = v < size / 2;
+      // Either fully inside, or across by half a radius.
+      for (const target of [it.r + gap, 0.5 * it.r]) {
+        const nv = nearLow ? target : size - target;
+        const moved = { ...it, [axis]: nv };
+        const clear = out.every(
+          (o, j) => j === i || domain.dist(o, moved) >= o.r + it.r + gap - 1,
+        );
+        if (clear) {
+          out[i] = moved;
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// Give every element its own rotation: each takes, from a ring of
+// candidate angles, the one furthest from the angles of its nearest
+// neighbours, so no two side-by-side elements point the same way.
+function assignAngles(
+  elements: PlacedElement[],
+  dist: DistanceFn,
+  rng: Rng,
+): void {
+  const done: PlacedElement[] = [];
+  const turn = (a: number, b: number) => {
+    const d = Math.abs(((a - b) % 360) + 360) % 360;
+    return Math.min(d, 360 - d);
+  };
+  for (const index of shuffle(
+    elements.map((_, i) => i),
+    rng,
+  )) {
+    const el = elements[index];
+    const neighbours = [...done]
+      .sort((a, b) => dist(el, a) - dist(el, b))
+      .slice(0, ANGLE_NEIGHBOURS);
+    const offset = rng() * (360 / ANGLE_CANDIDATES);
+    let bestAngle = offset;
+    let bestGap = -1;
+    for (let k = 0; k < ANGLE_CANDIDATES; k++) {
+      const angle = offset + (k * 360) / ANGLE_CANDIDATES;
+      const gap = neighbours.length
+        ? Math.min(...neighbours.map((n) => turn(angle, n.angle)))
+        : rng() * 180;
+      if (gap > bestGap) {
+        bestGap = gap;
+        bestAngle = angle;
+      }
+    }
+    el.angle = bestAngle % 360;
+    done.push(el);
+  }
+}
+
 // Deal motifs out evenly (each used as close to equally often as possible),
 // then keep swapping pairs of placements while it pushes same-motif copies
 // further apart. The cost is a repulsion between copies of the same motif
@@ -684,12 +827,26 @@ export function generateLayout(params: LayoutParams): LayoutResult {
           rng,
         );
 
+  const placedInstances =
+    repeatStyle === "lattice" || overlapping
+      ? instances
+      : avoidSlivers(
+          instances,
+          domain,
+          shape,
+          width,
+          height,
+          spacing,
+          gap,
+          isFree,
+        );
+
   const dist = domain.dist;
   const elements: PlacedElement[] = [];
   const warnings: string[] = [];
 
   for (const cls of active) {
-    const members = instances.filter((i) => i.cls === cls);
+    const members = placedInstances.filter((i) => i.cls === cls);
     const motifCount = configs[cls].count;
     if (members.length < motifCount) {
       warnings.push(
@@ -706,11 +863,11 @@ export function generateLayout(params: LayoutParams): LayoutResult {
         y: m.y,
         radius: m.r,
         color: configs[cls].color,
-        // Tossed layouts get random orientations; structured ones all point up.
-        angle: isFree ? rng() * 360 : -90,
+        angle: 0,
       });
     });
   }
+  assignAngles(elements, dist, rng);
 
   return {
     elements,

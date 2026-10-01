@@ -5,7 +5,7 @@ import { UNIT_OPTIONS, type CanvasConfig } from "@/lib/units";
 import { renderCircles, type CircleFrame } from "@/lib/layout/edgeRepeats";
 import { polygonPoints } from "@/lib/shapes/polygon";
 import { trellisLineWidth } from "@/lib/layout/lattice";
-import { withDpi } from "@/lib/check/png";
+import { jpegWithDpi, withDpi } from "@/lib/check/png";
 import type { ShapeModel } from "@/lib/shapes/shapes";
 import type { PlacedElement } from "@/lib/layout/types";
 
@@ -184,9 +184,10 @@ export default function Workspace({
   const svgRef = useRef<SVGSVGElement>(null);
   const [exporting, setExporting] = useState(false);
 
-  // Draw the template SVG (watermark included, background left transparent)
-  // into a canvas at full pixel size and save it as a PNG at the canvas DPI.
-  async function exportPng() {
+  // Draw the template SVG (watermark included) into a canvas at full pixel
+  // size and save it at the canvas DPI. PNG keeps the background
+  // transparent; JPG goes on white and makes a much smaller file.
+  async function exportImage(format: "png" | "jpg") {
     const svg = svgRef.current;
     if (!svg) return;
     setExporting(true);
@@ -204,18 +205,26 @@ export default function Workspace({
       const canvas = document.createElement("canvas");
       canvas.width = config.widthPx;
       canvas.height = config.heightPx;
-      canvas
-        .getContext("2d")!
-        .drawImage(img, 0, 0, config.widthPx, config.heightPx);
+      const ctx = canvas.getContext("2d")!;
+      if (format === "jpg") {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+      ctx.drawImage(img, 0, 0, config.widthPx, config.heightPx);
       URL.revokeObjectURL(url);
       const blob = await new Promise<Blob | null>((r) =>
-        canvas.toBlob(r, "image/png"),
+        format === "png"
+          ? canvas.toBlob(r, "image/png")
+          : canvas.toBlob(r, "image/jpeg", 0.9),
       );
       if (!blob) throw new Error("export failed");
-      const file = await withDpi(blob, config.dpi);
+      const file =
+        format === "png"
+          ? await withDpi(blob, config.dpi)
+          : await jpegWithDpi(blob, config.dpi);
       const link = document.createElement("a");
       link.href = URL.createObjectURL(file);
-      link.download = `${exportName}-${config.widthPx}x${config.heightPx}-${config.dpi}dpi.png`;
+      link.download = `${exportName}-${config.widthPx}x${config.heightPx}-${config.dpi}dpi.${format}`;
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
     } finally {
@@ -293,13 +302,31 @@ export default function Workspace({
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={exportPng}
-            disabled={exporting}
-            className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
-          >
-            {exporting ? "Exporting…" : "Export PNG"}
-          </button>
+          {exporting ? (
+            <span className="text-sm text-zinc-500 dark:text-zinc-400">
+              Exporting…
+            </span>
+          ) : (
+            <div className="flex items-center gap-1">
+              <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                Export
+              </span>
+              <button
+                onClick={() => exportImage("jpg")}
+                title="White background, smaller file"
+                className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+              >
+                JPG
+              </button>
+              <button
+                onClick={() => exportImage("png")}
+                title="Transparent background"
+                className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                PNG
+              </button>
+            </div>
+          )}
           <span className="text-sm text-zinc-400 dark:text-zinc-500">
             {Math.round(scale * 100)}%
           </span>
@@ -418,8 +445,9 @@ export default function Workspace({
             )}
             <g clipPath={shape ? `url(#${SHAPE_CLIP_ID})` : undefined}>
               {circles.map((c) => (
-                <g key={c.key} opacity={c.split ? 0.5 : 1}>
+                <g key={c.key}>
                   <circle
+                    strokeOpacity={c.split ? 0.5 : 1}
                     cx={c.cx}
                     cy={c.cy}
                     r={c.r}
@@ -432,7 +460,7 @@ export default function Workspace({
                   <circle
                     cx={c.dotX}
                     cy={c.dotY}
-                    r={strokeWidth * 0.8}
+                    r={strokeWidth * 1.2}
                     fill="#000"
                   />
                   <text

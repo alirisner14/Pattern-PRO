@@ -59,13 +59,26 @@ function metrics(style: RepeatStyle, density: number, seed: number) {
     }
     if (best) { total++; if (best.label === a.label) same++; }
   }
-  return { n: els.length, overlaps: overlaps / 2, gapCV: cv, hole: hole / hero, spread: worst, worstSpread: worstSpread === Infinity ? 1 : worstSpread, sameNeighbour: total ? same / total : 0 };
+  // Edge slivers: far-side piece under 35% of the radius.
+  let slivers = 0;
+  for (const e of els) for (const v of [Math.min(e.x, W - e.x), Math.min(e.y, H - e.y)]) {
+    const piece = e.radius - v;
+    if (piece > 0 && piece < 0.35 * e.radius) slivers++;
+  }
+  // Rotation: smallest angle difference between an element and its nearest neighbour.
+  let minTurn = 180;
+  for (const a of els) {
+    let best: (typeof els)[number] | null = null, bd = Infinity;
+    for (const b of els) { if (b === a) continue; const dd = d(a, b); if (dd < bd) { bd = dd; best = b; } }
+    if (best) { const t = Math.abs(((a.angle - best.angle) % 360 + 360) % 360); minTurn = Math.min(minTurn, Math.min(t, 360 - t)); }
+  }
+  return { slivers, minTurn, n: els.length, overlaps: overlaps / 2, gapCV: cv, hole: hole / hero, spread: worst, worstSpread: worstSpread === Infinity ? 1 : worstSpread, sameNeighbour: total ? same / total : 0 };
 }
 
 for (const style of ["scattered", "grid", "half-drop", "ditsy"] as RepeatStyle[]) {
   for (const density of [0.3, 0.5, 0.75]) {
     const runs = [1, 2, 3, 4, 5].map((s) => metrics(style, density, s));
     const avg = (k: keyof (typeof runs)[number]) => (runs.reduce((s, r) => s + (r[k] as number), 0) / runs.length).toFixed(2);
-    console.log(`${style.padEnd(10)} d=${density} n=${avg("n")} overlaps=${avg("overlaps")} gapCV=${avg("gapCV")} hole=${avg("hole")} spread=${avg("spread")} worstSpread=${avg("worstSpread")} sameNbr=${avg("sameNeighbour")}`);
+    console.log(`${style.padEnd(10)} d=${density} n=${avg("n")} overlaps=${avg("overlaps")} gapCV=${avg("gapCV")} hole=${avg("hole")} spread=${avg("spread")} worstSpread=${avg("worstSpread")} sameNbr=${avg("sameNeighbour")} slivers=${avg("slivers")} minTurn=${avg("minTurn")}`);
   }
 }

@@ -36,3 +36,19 @@ export async function withDpi(png: Blob, dpi: number): Promise<Blob> {
   out.set(src.subarray(at), at + chunk.length);
   return new Blob([out], { type: "image/png" });
 }
+
+// JPEGs from a canvas carry a JFIF header with no real DPI; set it in place.
+export async function jpegWithDpi(jpeg: Blob, dpi: number): Promise<Blob> {
+  const bytes = new Uint8Array(await jpeg.arrayBuffer());
+  const isJfif =
+    bytes[2] === 0xff &&
+    bytes[3] === 0xe0 &&
+    String.fromCharCode(...bytes.subarray(6, 11)) === "JFIF\0";
+  if (isJfif) {
+    const view = new DataView(bytes.buffer);
+    bytes[13] = 1; // units: dots per inch
+    view.setUint16(14, dpi);
+    view.setUint16(16, dpi);
+  }
+  return new Blob([bytes], { type: "image/jpeg" });
+}

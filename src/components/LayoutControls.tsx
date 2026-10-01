@@ -42,6 +42,12 @@ const LAYER_DENSITY: Record<LayerType, number> = {
   small: 0.7,
 };
 
+// Repeat styles that reveal more settings when chosen.
+const MORE_OPTIONS: Partial<Record<RepeatStyle, string>> = {
+  diamond: "+ side options",
+  ogee: "+ 15 shapes",
+};
+
 const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
   { value: "grid", label: "Grid" },
   { value: "scattered", label: "Scattered" },
@@ -324,14 +330,29 @@ export default function LayoutControls({
             <button
               key={opt.value}
               onClick={() => set("repeatStyle", opt.value)}
-              className={`flex flex-col items-center gap-1 rounded-md border p-2 text-xs transition-colors ${
+              title={MORE_OPTIONS[opt.value]}
+              className={`relative flex flex-col items-center gap-1 rounded-md border p-2 text-xs transition-colors ${
                 value.repeatStyle === opt.value
                   ? "border-zinc-900 bg-zinc-100 text-zinc-900 dark:border-zinc-50 dark:bg-zinc-800 dark:text-zinc-50"
                   : "border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
               }`}
             >
+              {MORE_OPTIONS[opt.value] && (
+                // Shapes open a panel of extra options below; flag that.
+                <span
+                  aria-hidden
+                  className="absolute right-1 top-1 rounded bg-zinc-200 px-1 text-[10px] leading-4 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200"
+                >
+                  ▾
+                </span>
+              )}
               <RepeatStylePictograph style={opt.value} />
               {opt.label}
+              {MORE_OPTIONS[opt.value] && (
+                <span className="text-[10px] leading-3 text-zinc-400 dark:text-zinc-500">
+                  {MORE_OPTIONS[opt.value]}
+                </span>
+              )}
             </button>
           ))}
         </div>
