@@ -5,6 +5,7 @@ import { UNIT_OPTIONS, type CanvasConfig } from "@/lib/units";
 import { renderCircles, type CircleFrame } from "@/lib/layout/edgeRepeats";
 import { polygonPoints } from "@/lib/shapes/polygon";
 import { trellisLineWidth } from "@/lib/layout/lattice";
+import { withDpi } from "@/lib/check/png";
 import type { ShapeModel } from "@/lib/shapes/shapes";
 import type { PlacedElement } from "@/lib/layout/types";
 
@@ -16,6 +17,8 @@ interface WorkspaceProps {
   showEdgeRepeats: boolean;
   trellis?: { cellW: number; cellH: number };
   mirrorAxes?: boolean;
+  // Used to name the exported file.
+  exportName: string;
   onReset: () => void;
 }
 
@@ -175,8 +178,51 @@ export default function Workspace({
   showEdgeRepeats,
   trellis,
   mirrorAxes,
+  exportName,
   onReset,
 }: WorkspaceProps) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [exporting, setExporting] = useState(false);
+
+  // Draw the template SVG (watermark included, background left transparent)
+  // into a canvas at full pixel size and save it as a PNG at the canvas DPI.
+  async function exportPng() {
+    const svg = svgRef.current;
+    if (!svg) return;
+    setExporting(true);
+    try {
+      const markup = new XMLSerializer().serializeToString(svg);
+      const url = URL.createObjectURL(
+        new Blob([markup], { type: "image/svg+xml;charset=utf-8" }),
+      );
+      const img = new Image();
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("render failed"));
+        img.src = url;
+      });
+      const canvas = document.createElement("canvas");
+      canvas.width = config.widthPx;
+      canvas.height = config.heightPx;
+      canvas
+        .getContext("2d")!
+        .drawImage(img, 0, 0, config.widthPx, config.heightPx);
+      URL.revokeObjectURL(url);
+      const blob = await new Promise<Blob | null>((r) =>
+        canvas.toBlob(r, "image/png"),
+      );
+      if (!blob) throw new Error("export failed");
+      const file = await withDpi(blob, config.dpi);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(file);
+      link.download = `${exportName}-${config.widthPx}x${config.heightPx}-${config.dpi}dpi.png`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(link.href), 10_000);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   const [theme, setTheme] = useState<PreviewTheme>("light");
   const circles = useMemo(() => {
     const frame: CircleFrame = shape?.regionTiles
@@ -247,6 +293,13 @@ export default function Workspace({
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={exportPng}
+            disabled={exporting}
+            className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-700 disabled:opacity-40 dark:bg-zinc-50 dark:text-zinc-900 dark:hover:bg-zinc-200"
+          >
+            {exporting ? "Exporting…" : "Export PNG"}
+          </button>
           <span className="text-sm text-zinc-400 dark:text-zinc-500">
             {Math.round(scale * 100)}%
           </span>
@@ -290,6 +343,8 @@ export default function Workspace({
           }`}
         >
           <svg
+            ref={svgRef}
+            xmlns="http://www.w3.org/2000/svg"
             width={config.widthPx}
             height={config.heightPx}
             viewBox={`0 0 ${config.widthPx} ${config.heightPx}`}

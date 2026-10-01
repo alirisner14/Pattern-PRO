@@ -19,6 +19,10 @@ export type RepeatStyle =
   | "diamond"
   | "ogee";
 
+// Main: the three tiers. Large: a back layer of extra-large elements only.
+// Small: a texture layer of extra-small elements, optionally overlapping.
+export type LayerType = "main" | "large" | "small";
+
 export interface ElementClassConfig {
   count: number;
   color: string;
@@ -35,6 +39,9 @@ export interface LayoutParams {
   filler: ElementClassConfig;
   // Diamond/Ogee: the layout goes inside this shape.
   shape?: ShapeModel;
+  layer?: LayerType;
+  // Small layer: elements may overlap once it gets dense.
+  allowOverlap?: boolean;
 }
 
 export interface PlacedElement {
@@ -59,6 +66,10 @@ export interface LayoutResult {
 }
 
 export interface PatternSettings {
+  layer: LayerType;
+  largeCount: number;
+  smallCount: number;
+  allowOverlap: boolean;
   repeatStyle: RepeatStyle;
   density: number;
   heroCount: number;

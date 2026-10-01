@@ -1,6 +1,9 @@
 import {
+  latticeDelta,
   latticeDistance,
+  torusDelta,
   torusDistance,
+  type DeltaFn,
   wrap,
   type DistanceFn,
   type Vec,
@@ -12,6 +15,8 @@ import { pointInPolygon, polygonArea, signedDistance } from "../shapes/polygon";
 // Where a layout lives and how its edges repeat.
 export interface Domain {
   dist: DistanceFn;
+  // Shortest offset between two points (matches dist).
+  delta: DeltaFn;
   area: number;
   // Where the seams meet, and points along each distinct seam. Null/empty
   // when the region doesn't repeat edge to edge (nothing crosses its edge).
@@ -28,6 +33,7 @@ const SEAM_SAMPLES = 64;
 export function rectDomain(width: number, height: number): Domain {
   return {
     dist: torusDistance(width, height),
+    delta: torusDelta(width, height),
     area: width * height,
     seamCorner: { x: 0, y: 0 },
     seamSides: [
@@ -70,6 +76,7 @@ export function shapeDomain(
     const [t1, t2] = shape.translations;
     return {
       dist: latticeDistance(t1, t2),
+      delta: latticeDelta(t1, t2),
       area: polygonArea(region),
       seamCorner: shape.seamCorner,
       seamSides: shape.seamSides,
@@ -91,6 +98,7 @@ export function shapeDomain(
 
   return {
     dist: torusDistance(width, height),
+    delta: torusDelta(width, height),
     area: shape.area ?? Math.min(width * height, polygonArea(region)),
     seamCorner: null,
     seamSides: [],

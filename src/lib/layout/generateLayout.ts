@@ -48,6 +48,15 @@ const LATTICE_ANCHOR_SHARE = 0.7;
 // A diamond has four corners: one for the middle tier, the rest for the
 // smallest, so the lattice never crowds.
 const LATTICE_CORNERS = 4;
+// Upper bound on improvement passes when spreading motifs apart.
+const MOTIF_PASSES = 30;
+// Spacing relaxation: rounds, and the share of the area the circles (plus
+// half the gap around each) should fill.
+const RELAX_ITERATIONS = 80;
+const RELAX_FILL = 0.82;
+// A hole gets an extra smallest-tier element when it can hold one with this
+// share of the settled gap all round.
+const HOLE_FILL = 0.9;
 
 interface Instance extends Circle {
   cls: ElementClass;
@@ -80,14 +89,8 @@ function letterFor(index: number): string {
   return s;
 }
 
-function labelFor(
-  classNumber: number,
-  motif: number,
-  motifCount: number,
-): string {
-  return motifCount === 1
-    ? String(classNumber)
-    : `${classNumber}${letterFor(motif)}`;
+function labelFor(prefix: string, motif: number, motifCount: number): string {
+  return motifCount === 1 ? prefix : `${prefix}${letterFor(motif)}`;
 }
 
 // Grid: solve the smaller tiers' positions once inside a single repeat cell,
@@ -280,45 +283,228 @@ function scatteredInstances(
       out.push({ ...normalize(p), r, cls });
     }
   });
+  // Settle the spacing, then drop the smallest tier into any hole still big
+  // enough to hold one at the settled gap, and settle again.
+  const first = relax(out, domain, gap);
+  const smallest = active[active.length - 1];
+  const rS = radiusOf(smallest);
+  const extra = fillGaps({
+    candidates,
+    placed: first.items.map((p) => ({ ...p })),
+    radius: rS,
+    gap: Math.max(gap, first.target * HOLE_FILL),
+    dist,
+    step,
+    bound,
+  });
+  if (!extra.length) return first.items;
+  return relax(
+    [
+      ...first.items,
+      ...extra.map((p) => ({ ...normalize(p), r: rS, cls: smallest })),
+    ],
+    domain,
+    gap,
+  ).items;
+}
+
+// Even out the spacing: every pair closer (edge to edge) than the target
+// gap pushes apart, and the outline of a shape pushes inward, until things
+// settle. Crowded spots spread into bare ones, so the gaps between all
+// elements end up close to equal. The target gap is the one that would let
+// the elements just fill the space.
+function relax(
+  items: Instance[],
+  domain: Domain,
+  gap: number,
+): { items: Instance[]; target: number } {
+  const n = items.length;
+  if (n < 2) return { items, target: gap };
+  const { delta, dist, bound, normalize } = domain;
+
+  // Solve for the gap G at which the circles, each grown by G/2, cover the
+  // usable share of the area.
+  const cover = (G: number) =>
+    items.reduce((sum, it) => sum + Math.PI * (it.r + G / 2) ** 2, 0);
+  // A negative gap (overlap allowed) lets the solution go below touching.
+  let lo = Math.min(0, gap);
+  let hi = Math.sqrt(domain.area);
+  for (let k = 0; k < 40; k++) {
+    const mid = (lo + hi) / 2;
+    if (cover(mid) < RELAX_FILL * domain.area) lo = mid;
+    else hi = mid;
+  }
+  const target = Math.max(gap, lo);
+
+  const minGap = (pts: Instance[]) => {
+    let m = Infinity;
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        m = Math.min(m, dist(pts[i], pts[j]) - pts[i].r - pts[j].r);
+      }
+    }
+    return m;
+  };
+  const inside = (p: Vec, r: number) => !bound || bound(p) >= r + gap;
+  const before = minGap(items);
+
+  let pts = items.map((it) => ({ ...it }));
+  for (let iter = 0; iter < RELAX_ITERATIONS; iter++) {
+    // Steps shrink as things settle.
+    const ease = 1 - iter / RELAX_ITERATIONS;
+    const moves = pts.map(() => ({ x: 0, y: 0 }));
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const v = delta(pts[i], pts[j]);
+        const d = Math.hypot(v.x, v.y) || 1e-6;
+        const short = target - (d - pts[i].r - pts[j].r);
+        if (short <= 0) continue;
+        const push = (short / 2) * 0.5;
+        moves[i].x += (v.x / d) * push;
+        moves[i].y += (v.y / d) * push;
+        moves[j].x -= (v.x / d) * push;
+        moves[j].y -= (v.y / d) * push;
+      }
+      if (bound) {
+        // The outline keeps elements a target gap away, pushing inward.
+        const p = pts[i];
+        const room = bound(p) - p.r;
+        if (room < target) {
+          const h = 1;
+          const gx =
+            bound({ x: p.x + h, y: p.y }) - bound({ x: p.x - h, y: p.y });
+          const gy =
+            bound({ x: p.x, y: p.y + h }) - bound({ x: p.x, y: p.y - h });
+          const gl = Math.hypot(gx, gy) || 1;
+          const push = (target - room) * 0.5;
+          moves[i].x += (gx / gl) * push;
+          moves[i].y += (gy / gl) * push;
+        }
+      }
+    }
+    const maxStep = target * 0.5 * ease + 1;
+    pts = pts.map((p, i) => {
+      let { x, y } = moves[i];
+      const len = Math.hypot(x, y);
+      if (len > maxStep) {
+        x *= maxStep / len;
+        y *= maxStep / len;
+      }
+      const q = normalize({ x: p.x + x, y: p.y + y });
+      return inside(q, p.r) ? { ...p, ...q } : p;
+    });
+  }
+
+  // Never trade away the clearance the packing guaranteed.
+  return {
+    items: minGap(pts) >= Math.min(gap, before) - 1 ? pts : items,
+    target,
+  };
+}
+
+// Small layer with overlap: one element dropped at random inside each cell
+// of a grid over the canvas. Every cell gets one, so the layer stays evenly
+// spread, but within a cell anything goes — neighbours may overlap, just
+// never so deeply that one hides the other.
+function overlappingInstances(
+  cellCount: number,
+  domain: Domain,
+  cls: ElementClass,
+  r: number,
+  width: number,
+  height: number,
+  rng: Rng,
+): Instance[] {
+  const cols = Math.max(1, Math.round(Math.sqrt((cellCount * width) / height)));
+  const rows = Math.max(1, Math.round(cellCount / cols));
+  const cw = width / cols;
+  const ch = height / rows;
+  const minDist = (2 - OVERLAP_SHARE) * r;
+  const out: Instance[] = [];
+  for (const c of shuffle(
+    Array.from({ length: cols * rows }, (_, i) => i),
+    rng,
+  )) {
+    const cx = (c % cols) * cw;
+    const cy = Math.floor(c / cols) * ch;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const p = domain.normalize({ x: cx + rng() * cw, y: cy + rng() * ch });
+      if (domain.bound && domain.bound(p) < r) continue;
+      if (out.some((o) => domain.dist(o, p) < minDist)) continue;
+      out.push({ ...p, r, cls });
+      break;
+    }
+  }
   return out;
 }
 
 // Deal motifs out evenly (each used as close to equally often as possible),
-// and give each placement the motif whose nearest copy is farthest away, so
-// the same motif never bunches up.
+// then keep swapping pairs of placements while it pushes same-motif copies
+// further apart. The cost is a repulsion between copies of the same motif
+// (1/d²), so the best arrangement interleaves every motif across the whole
+// canvas instead of letting one take over a region.
 function assignMotifs(
   members: Vec[],
   motifCount: number,
   dist: DistanceFn,
   rng: Rng,
 ): number[] {
-  const result = new Array<number>(members.length).fill(0);
-  if (motifCount <= 1) return result;
+  const n = members.length;
+  const result = new Array<number>(n).fill(0);
+  if (motifCount <= 1 || n < 2) return result;
 
-  const usage = new Array<number>(motifCount).fill(0);
-  const copies: Vec[][] = Array.from({ length: motifCount }, () => []);
-  const motifOrder = Array.from({ length: motifCount }, (_, i) => i);
-
-  for (const index of shuffle(
+  // Balanced starting deal in random order.
+  shuffle(
     members.map((_, i) => i),
     rng,
-  )) {
-    const p = members[index];
-    const leastUsed = Math.min(...usage);
-    let choice = -1;
-    let farthest = -1;
-    for (const m of shuffle(motifOrder, rng)) {
-      if (usage[m] !== leastUsed) continue;
-      let nearest = Infinity;
-      for (const q of copies[m]) nearest = Math.min(nearest, dist(p, q));
-      if (nearest > farthest) {
-        farthest = nearest;
-        choice = m;
+  ).forEach((index, k) => {
+    result[index] = k % motifCount;
+  });
+
+  const w = Array.from({ length: n }, () => new Float64Array(n));
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const d = Math.max(1, dist(members[i], members[j]));
+      w[i][j] = w[j][i] = 1 / (d * d);
+    }
+  }
+  // pull[i][m]: repulsion element i feels from copies of motif m.
+  const pull = Array.from({ length: n }, () => new Float64Array(motifCount));
+  for (let i = 0; i < n; i++) {
+    for (let j = 0; j < n; j++) if (j !== i) pull[i][result[j]] += w[i][j];
+  }
+
+  for (let pass = 0; pass < MOTIF_PASSES; pass++) {
+    let improved = false;
+    for (let i = 0; i < n; i++) {
+      for (let j = i + 1; j < n; j++) {
+        const a = result[i];
+        const b = result[j];
+        if (a === b) continue;
+        // Change in total cost if i and j trade motifs.
+        const delta =
+          pull[i][b] -
+          w[i][j] +
+          (pull[j][a] - w[i][j]) -
+          pull[i][a] -
+          pull[j][b];
+        if (delta >= -1e-15) continue;
+        result[i] = b;
+        result[j] = a;
+        for (let k = 0; k < n; k++) {
+          if (k !== i) {
+            pull[k][a] -= w[k][i];
+            pull[k][b] += w[k][i];
+          }
+          if (k !== j) {
+            pull[k][b] -= w[k][j];
+            pull[k][a] += w[k][j];
+          }
+        }
+        improved = true;
       }
     }
-    result[index] = choice;
-    usage[choice]++;
-    copies[choice].push(p);
+    if (!improved) break;
   }
   return result;
 }
@@ -368,6 +554,13 @@ function mirrorLayout(params: LayoutParams): LayoutResult {
 
 // Ditsy: tiny motifs, scattered this many times more densely.
 const DITSY_MULTIPLIER = 4;
+// Small layer: this many times more elements than the main layer.
+const SMALL_LAYER_MULTIPLIER = 8;
+// Small layer: elements fill less of their spacing, so they read as tiny.
+const SMALL_LAYER_SHARE = 0.6;
+// Large layer: elements fill more of their spacing.
+const LARGE_LAYER_SHARE = 1.25;
+const OVERLAP_SHARE = 0.6;
 
 export function generateLayout(params: LayoutParams): LayoutResult {
   if (params.repeatStyle === "mirror" && !params.shape)
@@ -379,18 +572,29 @@ export function generateLayout(params: LayoutParams): LayoutResult {
     density,
     seed,
   } = params;
+  // The extra layers use a single tier: the hero's settings for Large, the
+  // filler's for Small.
+  const layer = params.layer ?? "main";
+  const none = { count: 0, color: "" };
   const configs = {
-    hero: params.hero,
-    secondary: params.secondary,
-    filler: params.filler,
+    hero: layer === "small" ? none : params.hero,
+    secondary: layer === "main" ? params.secondary : none,
+    filler: layer === "large" ? none : params.filler,
   };
+  const prefixOf = (cls: ElementClass) =>
+    layer === "large"
+      ? "XL"
+      : layer === "small"
+        ? "XS"
+        : String(CLASS_NUMBER[cls]);
   const active = CLASS_ORDER.filter((c) => configs[c].count > 0);
   if (active.length === 0) return { elements: [], warnings: [] };
 
   const rng = mulberry32(seed);
   const target =
     anchorCountForDensity(density) *
-    (repeatStyle === "ditsy" ? DITSY_MULTIPLIER : 1);
+    (repeatStyle === "ditsy" ? DITSY_MULTIPLIER : 1) *
+    (layer === "small" ? SMALL_LAYER_MULTIPLIER : 1);
   const { shape } = params;
   const isFree =
     !!shape || repeatStyle === "scattered" || repeatStyle === "ditsy";
@@ -419,12 +623,22 @@ export function generateLayout(params: LayoutParams): LayoutResult {
   const anchorRadius = Math.min(
     ANCHOR_RADIUS *
       spacing *
-      (repeatStyle === "lattice" ? LATTICE_ANCHOR_SHARE : 1),
+      (repeatStyle === "lattice" ? LATTICE_ANCHOR_SHARE : 1) *
+      (layer === "large"
+        ? LARGE_LAYER_SHARE
+        : layer === "small"
+          ? SMALL_LAYER_SHARE
+          : 1),
     INRADIUS_SHARE * inradius,
   );
   const radiusOf: RadiusOf = (cls) =>
     (anchorRadius * RADIUS_RATIO[cls]) / RADIUS_RATIO[active[0]];
-  const gap = GAP * spacing;
+  // Overlap lets small elements sit up to this share of their radius into
+  // each other once the layer is dense.
+  const gap =
+    layer === "small" && params.allowOverlap
+      ? -OVERLAP_SHARE * anchorRadius
+      : GAP * spacing;
 
   // Lattice circles stay inside their diamond, clear of the trellis lines.
   const trellisBound =
@@ -438,26 +652,37 @@ export function generateLayout(params: LayoutParams): LayoutResult {
           );
         }
       : undefined;
-  const instances = lattice
-    ? gridInstances(
-        lattice,
-        active,
-        radiusOf,
-        gap,
+  const overlapping = layer === "small" && !!params.allowOverlap;
+  const instances = overlapping
+    ? overlappingInstances(
+        Math.round((anchorCount * width * height) / domain.area),
+        domain,
+        active[0],
+        anchorRadius,
         width,
         height,
-        trellisBound,
-        trellisBound ? LATTICE_CORNERS : Infinity,
-      )
-    : scatteredInstances(
-        anchorCount,
-        spacing,
-        domain,
-        active,
-        radiusOf,
-        gap,
         rng,
-      );
+      )
+    : lattice
+      ? gridInstances(
+          lattice,
+          active,
+          radiusOf,
+          gap,
+          width,
+          height,
+          trellisBound,
+          trellisBound ? LATTICE_CORNERS : Infinity,
+        )
+      : scatteredInstances(
+          anchorCount,
+          spacing,
+          domain,
+          active,
+          radiusOf,
+          gap,
+          rng,
+        );
 
   const dist = domain.dist;
   const elements: PlacedElement[] = [];
@@ -468,7 +693,7 @@ export function generateLayout(params: LayoutParams): LayoutResult {
     const motifCount = configs[cls].count;
     if (members.length < motifCount) {
       warnings.push(
-        `${CLASS_NAME[cls]}: ${motifCount} motifs but only ${members.length} spots fit. Raise Density or lower the count.`,
+        `${layer === "large" ? "Large" : layer === "small" ? "Small" : CLASS_NAME[cls]}: ${motifCount} motifs but only ${members.length} spots fit. Raise Density or lower the count.`,
       );
     }
     const motifs = assignMotifs(members, motifCount, dist, rng);
@@ -476,7 +701,7 @@ export function generateLayout(params: LayoutParams): LayoutResult {
       elements.push({
         id: `${cls}-${i}`,
         class: cls,
-        label: labelFor(CLASS_NUMBER[cls], motifs[i], motifCount),
+        label: labelFor(prefixOf(cls), motifs[i], motifCount),
         x: m.x,
         y: m.y,
         radius: m.r,

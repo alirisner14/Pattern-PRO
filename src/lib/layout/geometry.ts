@@ -24,6 +24,36 @@ export function torusDistance(width: number, height: number): DistanceFn {
     Math.hypot(wrapDelta(a.x - b.x, width), wrapDelta(a.y - b.y, height));
 }
 
+export type DeltaFn = (a: Vec, b: Vec) => Vec;
+
+// Shortest offset from b to a, the short way around the canvas.
+export function torusDelta(width: number, height: number): DeltaFn {
+  return (a, b) => ({
+    x: wrapDelta(a.x - b.x, width),
+    y: wrapDelta(a.y - b.y, height),
+  });
+}
+
+// Shortest offset from b to a on a repeat lattice.
+export function latticeDelta(t1: Vec, t2: Vec): DeltaFn {
+  return (a, b) => {
+    let best = { x: a.x - b.x, y: a.y - b.y };
+    let bestLen = Infinity;
+    for (let i = -2; i <= 2; i++) {
+      for (let j = -2; j <= 2; j++) {
+        const x = a.x - b.x + i * t1.x + j * t2.x;
+        const y = a.y - b.y + i * t1.y + j * t2.y;
+        const len = x * x + y * y;
+        if (len < bestLen) {
+          bestLen = len;
+          best = { x, y };
+        }
+      }
+    }
+    return best;
+  };
+}
+
 // Distance inside one repeat cell, where every lattice translation of a
 // point is the same point (a half-drop cell's neighbour sits half a cell down).
 export function latticeDistance(t1: Vec, t2: Vec): DistanceFn {
