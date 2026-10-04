@@ -50,6 +50,10 @@ const LATTICE_ANCHOR_SHARE = 0.7;
 const LATTICE_CORNERS = 4;
 // Upper bound on improvement passes when spreading motifs apart.
 const MOTIF_PASSES = 30;
+const MOTIF_FALLOFF = 4;
+// Weight of the half-and-half balance, and how many starting deals to try.
+const MOTIF_BALANCE = 1;
+const MOTIF_STARTS = 4;
 // Shifts tried per axis when moving the layout to avoid edge slivers.
 const SLIVER_SHIFT_STEPS = 12;
 // Rotation: neighbours compared against, and candidate angles tried.
@@ -61,7 +65,9 @@ const RELAX_ITERATIONS = 80;
 const RELAX_FILL = 0.82;
 // A hole gets an extra smallest-tier element when it can hold one with this
 // share of the settled gap all round.
-const HOLE_FILL = 0.9;
+const HOLE_FILL = 0;
+// The final hole fill uses this share of the normal gap.
+const FINAL_FILL_GAP = 1;
 
 interface Instance extends Circle {
   cls: ElementClass;
@@ -284,6 +290,10 @@ function scatteredInstances(
       step,
       maxCount,
       bound,
+      // A capped middle tier spreads across the canvas; the last tier fills
+      // every remaining gap anyway.
+      spreadFrom:
+        i < rest.length - 1 ? pins.filter((q) => q.cls === cls) : undefined,
     })) {
       out.push({ ...normalize(p), r, cls });
     }
@@ -291,6 +301,9 @@ function scatteredInstances(
   // Settle the spacing, then drop the smallest tier into any hole still big
   // enough to hold one at the settled gap, and settle again.
   const first = relax(out, domain, gap);
+  // A single-tier layer (Large, Small) keeps exactly the count its density
+  // asks for; holes are already even after settling.
+  if (active.length < 2) return first.items;
   const smallest = active[active.length - 1];
   const rS = radiusOf(smallest);
   const extra = fillGaps({
@@ -302,15 +315,31 @@ function scatteredInstances(
     step,
     bound,
   });
-  if (!extra.length) return first.items;
-  return relax(
-    [
-      ...first.items,
-      ...extra.map((p) => ({ ...normalize(p), r: rS, cls: smallest })),
-    ],
-    domain,
-    gap,
-  ).items;
+  const settled = extra.length
+    ? relax(
+        [
+          ...first.items,
+          ...extra.map((p) => ({ ...normalize(p), r: rS, cls: smallest })),
+        ],
+        domain,
+        gap,
+      ).items
+    : first.items;
+  // Last pass: any spot that can still hold a smallest-tier element at the
+  // normal gap gets one, centred in its hole, so nothing reads as bare.
+  const last = fillGaps({
+    candidates,
+    placed: settled.map((p) => ({ ...p })),
+    radius: rS,
+    gap: gap * FINAL_FILL_GAP,
+    dist,
+    step,
+    bound,
+  });
+  return [
+    ...settled,
+    ...last.map((p) => ({ ...normalize(p), r: rS, cls: smallest })),
+  ];
 }
 
 // Even out the spacing: every pair closer (edge to edge) than the target
@@ -445,7 +474,7 @@ function overlappingInstances(
 
 // How much of an element pokes across an edge it straddles: a piece
 // narrower than this share of its radius reads as a sliver.
-const SLIVER_SHARE = 0.35;
+const SLIVER_SHARE = 0.45;
 
 // Total sliver badness: for every element crossing an edge (or a tiling
 // shape's outline), how far its far-side piece falls short of a decent size.
@@ -481,7 +510,12 @@ function avoidSlivers(
   const tiles = !!shape?.regionTiles;
   const inset = tiles
     ? (p: Vec) => [signedDistance(p, shape!.region)]
-    : (p: Vec) => [Math.min(p.x, width - p.x), Math.min(p.y, height - p.y)];
+    : (p: Vec) => {
+        const dx = Math.min(p.x, width - p.x);
+        const dy = Math.min(p.y, height - p.y);
+        // The corner piece of an element crossing two edges counts too.
+        return [dx, dy, Math.hypot(dx, dy)];
+      };
   const shift = (dx: number, dy: number) =>
     items.map((it) => ({
       ...it,
@@ -582,74 +616,133 @@ function assignAngles(
 }
 
 // Deal motifs out evenly (each used as close to equally often as possible),
-// then keep swapping pairs of placements while it pushes same-motif copies
-// further apart. The cost is a repulsion between copies of the same motif
-// (1/d²), so the best arrangement interleaves every motif across the whole
-// canvas instead of letting one take over a region.
+// then keep swapping pairs of placements while it lowers a cost made of two
+// parts:
+// - copies of the same motif repel each other steeply, so twins never sit
+//   side by side and every motif is interleaved with the others;
+// - each motif should have half its copies in each half of the canvas, for
+//   several ways of halving it (left/right, top/bottom, and the same shifted
+//   a quarter), so no motif piles up on one side.
+// A few random starting deals are tried and the best result kept.
 function assignMotifs(
   members: Vec[],
   motifCount: number,
   dist: DistanceFn,
   rng: Rng,
+  width: number,
+  height: number,
 ): number[] {
   const n = members.length;
-  const result = new Array<number>(n).fill(0);
-  if (motifCount <= 1 || n < 2) return result;
+  if (motifCount <= 1 || n < 2) return new Array<number>(n).fill(0);
 
-  // Balanced starting deal in random order.
-  shuffle(
-    members.map((_, i) => i),
-    rng,
-  ).forEach((index, k) => {
-    result[index] = k % motifCount;
-  });
-
+  // Pair weights, scaled by the typical neighbour distance.
+  const nearest = members.map((p, i) =>
+    members.reduce(
+      (m, q, j) => (j === i ? m : Math.min(m, dist(p, q))),
+      Infinity,
+    ),
+  );
+  const typical = [...nearest].sort((a, b) => a - b)[Math.floor(n / 2)] || 1;
   const w = Array.from({ length: n }, () => new Float64Array(n));
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
       const d = Math.max(1, dist(members[i], members[j]));
-      w[i][j] = w[j][i] = 1 / (d * d);
+      w[i][j] = w[j][i] = (typical / d) ** MOTIF_FALLOFF;
     }
   }
-  // pull[i][m]: repulsion element i feels from copies of motif m.
-  const pull = Array.from({ length: n }, () => new Float64Array(motifCount));
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) if (j !== i) pull[i][result[j]] += w[i][j];
-  }
+  // Which side of each halving cut every member is on.
+  const cuts = [
+    (p: Vec) => wrap(p.x, width) < width / 2,
+    (p: Vec) => wrap(p.x - width / 4, width) < width / 2,
+    (p: Vec) => wrap(p.y, height) < height / 2,
+    (p: Vec) => wrap(p.y - height / 4, height) < height / 2,
+  ];
+  const side = members.map((p) => cuts.map((cut) => cut(p)));
 
-  for (let pass = 0; pass < MOTIF_PASSES; pass++) {
-    let improved = false;
+  const run = (): { result: number[]; cost: number } => {
+    const result = new Array<number>(n).fill(0);
+    shuffle(
+      members.map((_, i) => i),
+      rng,
+    ).forEach((index, k) => {
+      result[index] = k % motifCount;
+    });
+    const usage = new Array<number>(motifCount).fill(0);
+    result.forEach((m) => usage[m]++);
+    // pull[i][m]: repulsion member i feels from copies of motif m.
+    const pull = Array.from({ length: n }, () => new Float64Array(motifCount));
     for (let i = 0; i < n; i++) {
-      for (let j = i + 1; j < n; j++) {
-        const a = result[i];
-        const b = result[j];
-        if (a === b) continue;
-        // Change in total cost if i and j trade motifs.
-        const delta =
-          pull[i][b] -
-          w[i][j] +
-          (pull[j][a] - w[i][j]) -
-          pull[i][a] -
-          pull[j][b];
-        if (delta >= -1e-15) continue;
-        result[i] = b;
-        result[j] = a;
-        for (let k = 0; k < n; k++) {
-          if (k !== i) {
-            pull[k][a] -= w[k][i];
-            pull[k][b] += w[k][i];
+      for (let j = 0; j < n; j++) if (j !== i) pull[i][result[j]] += w[i][j];
+    }
+    // inHalf[m][c]: copies of motif m on the first side of cut c.
+    const inHalf = Array.from({ length: motifCount }, () =>
+      new Array<number>(cuts.length).fill(0),
+    );
+    result.forEach((m, i) => side[i].forEach((on, c) => on && inHalf[m][c]++));
+    const off = (m: number, c: number, change: number) => {
+      const e = usage[m] / 2;
+      return (inHalf[m][c] + change - e) ** 2 - (inHalf[m][c] - e) ** 2;
+    };
+
+    for (let pass = 0; pass < MOTIF_PASSES; pass++) {
+      let improved = false;
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const a = result[i];
+          const b = result[j];
+          if (a === b) continue;
+          let delta =
+            pull[i][b] -
+            w[i][j] +
+            (pull[j][a] - w[i][j]) -
+            pull[i][a] -
+            pull[j][b];
+          for (let c = 0; c < cuts.length; c++) {
+            if (side[i][c] === side[j][c]) continue;
+            // i leaves motif a for b; j leaves b for a.
+            const da = side[i][c] ? -1 : 1;
+            delta += MOTIF_BALANCE * (off(a, c, da) + off(b, c, -da));
           }
-          if (k !== j) {
-            pull[k][b] -= w[k][j];
-            pull[k][a] += w[k][j];
+          if (delta >= -1e-12) continue;
+          for (let c = 0; c < cuts.length; c++) {
+            if (side[i][c] === side[j][c]) continue;
+            const da = side[i][c] ? -1 : 1;
+            inHalf[a][c] += da;
+            inHalf[b][c] -= da;
           }
+          result[i] = b;
+          result[j] = a;
+          for (let k = 0; k < n; k++) {
+            if (k !== i) {
+              pull[k][a] -= w[k][i];
+              pull[k][b] += w[k][i];
+            }
+            if (k !== j) {
+              pull[k][b] -= w[k][j];
+              pull[k][a] += w[k][j];
+            }
+          }
+          improved = true;
         }
-        improved = true;
+      }
+      if (!improved) break;
+    }
+    let cost = 0;
+    for (let i = 0; i < n; i++) cost += pull[i][result[i]] / 2;
+    for (let m = 0; m < motifCount; m++) {
+      for (let c = 0; c < cuts.length; c++) {
+        cost += MOTIF_BALANCE * (inHalf[m][c] - usage[m] / 2) ** 2;
       }
     }
-    if (!improved) break;
+    return { result, cost };
+  };
+
+  let best = run();
+  for (let attempt = 1; attempt < MOTIF_STARTS; attempt++) {
+    const next = run();
+    if (next.cost < best.cost) best = next;
   }
-  return result;
+  return best.result;
 }
 
 // Mirror: lay out one quarter, kept clear of its edges (every edge is a
@@ -853,7 +946,7 @@ export function generateLayout(params: LayoutParams): LayoutResult {
         `${layer === "large" ? "Large" : layer === "small" ? "Small" : CLASS_NAME[cls]}: ${motifCount} motifs but only ${members.length} spots fit. Raise Density or lower the count.`,
       );
     }
-    const motifs = assignMotifs(members, motifCount, dist, rng);
+    const motifs = assignMotifs(members, motifCount, dist, rng, width, height);
     members.forEach((m, i) => {
       elements.push({
         id: `${cls}-${i}`,

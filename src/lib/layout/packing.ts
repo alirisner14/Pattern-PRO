@@ -71,6 +71,10 @@ interface FillOptions {
   maxCount?: number;
   centre?: boolean;
   bound?: Bound;
+  // When set, pick (among gaps big enough) the one farthest from these
+  // points and from each other, so one tier spreads out instead of
+  // chaining through neighbouring gaps.
+  spreadFrom?: Vec[];
 }
 
 // Repeatedly drop a circle into the roomiest remaining gap until no gap can
@@ -87,16 +91,34 @@ export function fillGaps({
   maxCount = Infinity,
   centre = true,
   bound,
+  spreadFrom,
 }: FillOptions): Vec[] {
   const room = candidates.map((c) => roomAt(c, placed, dist, bound));
   const added: Vec[] = [];
   const needed = radius + gap;
+  // Distance from each candidate to the nearest point of the same tier.
+  const apart = spreadFrom
+    ? candidates.map((c) =>
+        spreadFrom.reduce((m, q) => Math.min(m, dist(c, q)), Infinity),
+      )
+    : null;
 
   while (added.length < maxCount) {
     let bestIndex = -1;
     let bestRoom = -Infinity;
+    let bestApart = -Infinity;
     for (let i = 0; i < room.length; i++) {
-      if (room[i] > bestRoom) {
+      if (apart) {
+        if (room[i] < needed) continue;
+        if (
+          apart[i] > bestApart + 1e-9 ||
+          (Math.abs(apart[i] - bestApart) <= 1e-9 && room[i] > bestRoom)
+        ) {
+          bestApart = apart[i];
+          bestRoom = room[i];
+          bestIndex = i;
+        }
+      } else if (room[i] > bestRoom) {
         bestRoom = room[i];
         bestIndex = i;
       }
@@ -113,6 +135,7 @@ export function fillGaps({
     for (let i = 0; i < candidates.length; i++) {
       const d = dist(candidates[i], circle) - radius;
       if (d < room[i]) room[i] = d;
+      if (apart) apart[i] = Math.min(apart[i], dist(candidates[i], p));
     }
   }
 
