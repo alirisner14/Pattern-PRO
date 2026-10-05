@@ -5,6 +5,7 @@ import Image from "next/image";
 import CanvasSetupForm from "@/components/CanvasSetupForm";
 import PatternEditor from "@/components/PatternEditor";
 import PatternChecker from "@/components/checker/PatternChecker";
+import ServiceWorkerManager from "@/components/ServiceWorkerManager";
 import type { CanvasConfig } from "@/lib/units";
 
 type Mode = "templates" | "check";
@@ -24,10 +25,11 @@ export default function PatternsProApp() {
         {/* The logo's lettering is black, so it sits on a white badge in dark mode too. */}
         <span className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-white">
           <Image
-            src="/PatternPRO_Logo.png"
+            src="/icons/icon-192.png"
             alt="Pattern PRO"
             width={44}
             height={44}
+            unoptimized
             priority
           />
         </span>
@@ -68,6 +70,7 @@ export default function PatternsProApp() {
       >
         <PatternChecker />
       </div>
+      <ServiceWorkerManager />
     </div>
   );
 }
