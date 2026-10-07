@@ -41,6 +41,10 @@ export interface LayoutParams {
   xs?: ElementClassConfig;
   // Extra-small elements may overlap the others instead of fitting between.
   allowOverlap?: boolean;
+  // Share of the normal gap kept between a circle and the shape's outline.
+  // Mirror uses a half: its outline is a mirror axis, so a circle and its
+  // reflection end up exactly one gap apart.
+  edgeGapShare?: number;
 }
 
 export interface PlacedElement {

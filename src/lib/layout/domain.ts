@@ -24,6 +24,8 @@ export interface Domain {
   seamSides: Vec[][];
   // Room before a circle would leave the region; absent when it wraps.
   bound?: (p: Vec) => number;
+  // Share of the normal gap kept from the outline (default 1).
+  edgeShare?: number;
   sample: (rng: Rng) => Vec;
   normalize: (p: Vec) => Vec;
 }

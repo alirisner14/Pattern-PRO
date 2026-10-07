@@ -482,7 +482,14 @@ function scatteredInstances(
   gap: number,
   rng: Rng,
 ): Instance[] {
-  const { dist, normalize, bound } = domain;
+  const { dist, normalize } = domain;
+  // Packing asks for a full gap all round, so where the outline only needs
+  // part of one (a mirror axis), its room counts for that much more.
+  const edgeSlack = (1 - (domain.edgeShare ?? 1)) * gap;
+  const bound =
+    domain.bound && edgeSlack
+      ? (p: Vec) => domain.bound!(p) + edgeSlack
+      : domain.bound;
   const anchorCls = active[0];
   const rA = radiusOf(anchorCls);
   const maxJitter = SCATTER_JITTER * spacing;
@@ -639,7 +646,8 @@ function relax(
     }
     return m;
   };
-  const inside = (p: Vec, r: number) => !bound || bound(p) >= r + gap;
+  const share = domain.edgeShare ?? 1;
+  const inside = (p: Vec, r: number) => !bound || bound(p) >= r + share * gap;
   const before = minGap(items);
 
   let pts = items.map((it) => ({ ...it }));
@@ -663,14 +671,14 @@ function relax(
         // The outline keeps elements a target gap away, pushing inward.
         const p = pts[i];
         const room = bound(p) - p.r;
-        if (room < target) {
+        if (room < share * target) {
           const h = 1;
           const gx =
             bound({ x: p.x + h, y: p.y }) - bound({ x: p.x - h, y: p.y });
           const gy =
             bound({ x: p.x, y: p.y + h }) - bound({ x: p.x, y: p.y - h });
           const gl = Math.hypot(gx, gy) || 1;
-          const push = (target - room) * 0.5;
+          const push = (share * target - room) * 0.5;
           moves[i].x += (gx / gl) * push;
           moves[i].y += (gy / gl) * push;
         }
@@ -1051,6 +1059,7 @@ function mirrorLayout(params: LayoutParams): LayoutResult {
     widthPx: w,
     heightPx: h,
     repeatStyle: "scattered",
+    edgeGapShare: 0.5,
     // Four copies of the quarter, so a quarter of the placements each.
     density: Math.max(0, params.density - Math.log(4) / Math.log(36)),
     shape: {
@@ -1120,6 +1129,7 @@ export function generateLayout(params: LayoutParams): LayoutResult {
   const domain = shape
     ? shapeDomain(shape, width, height)
     : rectDomain(width, height);
+  if (params.edgeGapShare !== undefined) domain.edgeShare = params.edgeGapShare;
   const shapeCount = (t: number) =>
     shape ? Math.max(1, Math.round((t * domain.area) / (width * height))) : t;
 
