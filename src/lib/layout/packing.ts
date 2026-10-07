@@ -79,6 +79,8 @@ interface FillOptions {
   // as the first one — e.g. both deep holes of a hexagonal cell, but not the
   // narrower gaps between neighbours.
   relativeRoom?: number;
+  // How much each placement counts towards maxCount (default 1).
+  weight?: (p: Vec) => number;
 }
 
 // Repeatedly drop a circle into the roomiest remaining gap until no gap can
@@ -97,6 +99,7 @@ export function fillGaps({
   bound,
   spreadFrom,
   relativeRoom,
+  weight,
 }: FillOptions): Vec[] {
   const room = candidates.map((c) => roomAt(c, placed, dist, bound));
   const added: Vec[] = [];
@@ -108,7 +111,8 @@ export function fillGaps({
       )
     : null;
 
-  while (added.length < maxCount) {
+  let total = 0;
+  while (total < maxCount) {
     let bestIndex = -1;
     let bestRoom = -Infinity;
     let bestApart = -Infinity;
@@ -139,6 +143,7 @@ export function fillGaps({
     const circle = { x: p.x, y: p.y, r: radius };
     placed.push(circle);
     added.push(p);
+    total += weight ? weight(p) : 1;
 
     for (let i = 0; i < candidates.length; i++) {
       const d = dist(candidates[i], circle) - radius;

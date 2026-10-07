@@ -26,6 +26,11 @@ export function torusDistance(width: number, height: number): DistanceFn {
 
 export type DeltaFn = (a: Vec, b: Vec) => Vec;
 
+// Plain distance and offset, for a region that doesn't wrap.
+export const flatDistance: DistanceFn = (a, b) =>
+  Math.hypot(a.x - b.x, a.y - b.y);
+export const flatDelta: DeltaFn = (a, b) => ({ x: a.x - b.x, y: a.y - b.y });
+
 // Shortest offset from b to a, the short way around the canvas.
 export function torusDelta(width: number, height: number): DeltaFn {
   return (a, b) => ({

@@ -1,4 +1,6 @@
 import {
+  flatDelta,
+  flatDistance,
   latticeDelta,
   latticeDistance,
   torusDelta,
@@ -26,6 +28,16 @@ export interface Domain {
   bound?: (p: Vec) => number;
   // Share of the normal gap kept from the outline (default 1).
   edgeShare?: number;
+  // Mirror: which coordinates of a point lie on a mirror axis. A circle
+  // centred on an axis stays on it (it is its own reflection).
+  axisLock?: (p: Vec) => { x: boolean; y: boolean };
+  // Mirror: share of a circle that belongs to this region (a half on an
+  // axis, a quarter where two axes cross), for counting placements.
+  weight?: (p: Vec) => number;
+  // Mirror: the points where the axes cross, and spots along the axes for
+  // circles to sit on, about `step` apart.
+  crossings?: Vec[];
+  axisPoints?: (step: number) => Vec[];
   sample: (rng: Rng) => Vec;
   normalize: (p: Vec) => Vec;
 }
@@ -107,5 +119,51 @@ export function shapeDomain(
     bound: (p) => signedDistance(p, region),
     sample,
     normalize: (p) => ({ x: wrap(p.x, width), y: wrap(p.y, height) }),
+  };
+}
+
+// One quarter of a Mirror tile. All four of its edges are mirror axes (the
+// tile's centre lines and its own edges), so they behave differently from a
+// shape's outline: a circle either sits centred ON an axis (so it is halved
+// evenly by it, and its reflection is itself), or keeps clear of it. Nothing
+// wraps inside a quarter; the neighbours across an axis are reflections.
+export function mirrorDomain(width: number, height: number): Domain {
+  const EPS = 0.5;
+  const onX = (p: Vec) => p.x < EPS || width - p.x < EPS;
+  const onY = (p: Vec) => p.y < EPS || height - p.y < EPS;
+  const along = (v: number, size: number) =>
+    v < EPS || size - v < EPS ? Infinity : Math.min(v, size - v);
+  return {
+    dist: flatDistance,
+    delta: flatDelta,
+    area: width * height,
+    seamCorner: null,
+    seamSides: [],
+    // A circle off an axis must clear its own reflection.
+    bound: (p) => Math.min(along(p.x, width), along(p.y, height)),
+    edgeShare: 0.5,
+    axisLock: (p) => ({ x: onX(p), y: onY(p) }),
+    weight: (p) => (onX(p) ? 0.5 : 1) * (onY(p) ? 0.5 : 1),
+    crossings: [
+      { x: 0, y: 0 },
+      { x: width, y: 0 },
+      { x: 0, y: height },
+      { x: width, y: height },
+    ],
+    axisPoints: (step) => {
+      const pts: Vec[] = [];
+      for (let y = step / 2; y < height; y += step) {
+        pts.push({ x: 0, y }, { x: width, y });
+      }
+      for (let x = step / 2; x < width; x += step) {
+        pts.push({ x, y: 0 }, { x, y: height });
+      }
+      return pts;
+    },
+    sample: (rng) => ({ x: rng() * width, y: rng() * height }),
+    normalize: (p) => ({
+      x: Math.min(width, Math.max(0, p.x)),
+      y: Math.min(height, Math.max(0, p.y)),
+    }),
   };
 }

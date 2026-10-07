@@ -8,7 +8,7 @@ import {
   type DistanceFn,
   type Vec,
 } from "./geometry";
-import { rectDomain, shapeDomain, type Domain } from "./domain";
+import { mirrorDomain, rectDomain, shapeDomain, type Domain } from "./domain";
 import { signedDistance } from "../shapes/polygon";
 import { fillGaps, roomAt } from "./packing";
 import {
@@ -458,6 +458,16 @@ function pinSeams(
     }
   };
 
+  // Mirror: every point where two axes cross holds a circle, centred on it
+  // so both axes halve it evenly; otherwise the crossing is a bare spot.
+  // Symmetric designs are built around big motifs, so it is one of the two
+  // largest sizes in use.
+  const large = active.slice(0, 2);
+  for (const c of domain.crossings ?? []) {
+    const cls = large[Math.floor(rng() * large.length)];
+    const r = radiusOf(cls);
+    if (clearance(c, pins, domain.dist) >= r + gap) pins.push({ ...c, r, cls });
+  }
   const corner = domain.seamCorner;
   if (!corner) return pins;
   pin(() => corner, pickTier());
@@ -493,13 +503,25 @@ function scatteredInstances(
   const anchorCls = active[0];
   const rA = radiusOf(anchorCls);
   const maxJitter = SCATTER_JITTER * spacing;
+  const { weight, axisLock } = domain;
   const pins = pinSeams(domain, active, radiusOf, gap, rng);
   const pinned = (cls: ElementClass) =>
-    pins.filter((p) => p.cls === cls).length;
+    pins
+      .filter((p) => p.cls === cls)
+      .reduce((sum, p) => sum + (weight ? weight(p) : 1), 0);
+  // A circle on a mirror axis only moves along it.
+  const keepOnAxis = (from: Vec, to: Vec): Vec => {
+    if (!axisLock) return to;
+    const lock = axisLock(from);
+    return { x: lock.x ? from.x : to.x, y: lock.y ? from.y : to.y };
+  };
 
   const count = Math.max(1500, SCATTER_SAMPLES_PER_ANCHOR * anchorCount);
-  const candidates = Array.from({ length: count }, () => domain.sample(rng));
   const step = Math.sqrt(domain.area / count);
+  const candidates = [
+    ...Array.from({ length: count }, () => domain.sample(rng)),
+    ...(domain.axisPoints?.(step) ?? []),
+  ];
   const spread = fillGaps({
     candidates,
     placed: [...pins],
@@ -510,6 +532,7 @@ function scatteredInstances(
     maxCount: Math.max(0, anchorCount - pinned(anchorCls)),
     centre: false,
     bound,
+    weight,
   });
   const anchors: Circle[] = spread.map((p) => ({ ...p, r: rA }));
 
@@ -522,10 +545,12 @@ function scatteredInstances(
     for (let attempt = 0; attempt < 12; attempt++) {
       const angle = rng() * Math.PI * 2;
       const d = maxJitter * Math.sqrt(rng());
-      const q = normalize({
-        x: a.x + Math.cos(angle) * d,
-        y: a.y + Math.sin(angle) * d,
-      });
+      const q = normalize(
+        keepOnAxis(a, {
+          x: a.x + Math.cos(angle) * d,
+          y: a.y + Math.sin(angle) * d,
+        }),
+      );
       if (roomAt(q, others, dist, bound) >= rA + gap) {
         anchors[k] = { ...q, r: rA };
         break;
@@ -557,6 +582,7 @@ function scatteredInstances(
       step,
       maxCount,
       bound,
+      weight,
       // A capped middle tier spreads across the canvas; the last tier fills
       // every remaining gap anyway.
       spreadFrom:
@@ -621,12 +647,17 @@ function relax(
 ): { items: Instance[]; target: number } {
   const n = items.length;
   if (n < 2) return { items, target: gap };
-  const { delta, dist, bound, normalize } = domain;
+  const { delta, dist, bound, normalize, axisLock, weight } = domain;
 
   // Solve for the gap G at which the circles, each grown by G/2, cover the
   // usable share of the area.
+  // (A circle on a mirror axis only half belongs to this region.)
   const cover = (G: number) =>
-    items.reduce((sum, it) => sum + Math.PI * (it.r + G / 2) ** 2, 0);
+    items.reduce(
+      (sum, it) =>
+        sum + (weight ? weight(it) : 1) * Math.PI * (it.r + G / 2) ** 2,
+      0,
+    );
   // A negative gap (overlap allowed) lets the solution go below touching.
   let lo = Math.min(0, gap);
   let hi = Math.sqrt(domain.area);
@@ -673,10 +704,13 @@ function relax(
         const room = bound(p) - p.r;
         if (room < share * target) {
           const h = 1;
-          const gx =
-            bound({ x: p.x + h, y: p.y }) - bound({ x: p.x - h, y: p.y });
-          const gy =
-            bound({ x: p.x, y: p.y + h }) - bound({ x: p.x, y: p.y - h });
+          const lock = axisLock?.(p);
+          const gx = lock?.x
+            ? 0
+            : bound({ x: p.x + h, y: p.y }) - bound({ x: p.x - h, y: p.y });
+          const gy = lock?.y
+            ? 0
+            : bound({ x: p.x, y: p.y + h }) - bound({ x: p.x, y: p.y - h });
           const gl = Math.hypot(gx, gy) || 1;
           const push = (share * target - room) * 0.5;
           moves[i].x += (gx / gl) * push;
@@ -687,6 +721,9 @@ function relax(
     const maxStep = target * 0.5 * ease + 1;
     pts = pts.map((p, i) => {
       let { x, y } = moves[i];
+      const lock = axisLock?.(p);
+      if (lock?.x) x = 0;
+      if (lock?.y) y = 0;
       const len = Math.hypot(x, y);
       if (len > maxStep) {
         x *= maxStep / len;
@@ -1059,7 +1096,7 @@ function mirrorLayout(params: LayoutParams): LayoutResult {
     widthPx: w,
     heightPx: h,
     repeatStyle: "scattered",
-    edgeGapShare: 0.5,
+    mirrorQuarter: true,
     // Four copies of the quarter, so a quarter of the placements each.
     density: Math.max(0, params.density - Math.log(4) / Math.log(36)),
     shape: {
@@ -1077,12 +1114,32 @@ function mirrorLayout(params: LayoutParams): LayoutResult {
   });
   const W = params.widthPx;
   const H = params.heightPx;
-  const elements = inner.elements.flatMap((e) => [
-    e,
-    { ...e, id: `${e.id}-h`, x: W - e.x, angle: 180 - e.angle },
-    { ...e, id: `${e.id}-v`, y: H - e.y, angle: -e.angle },
-    { ...e, id: `${e.id}-hv`, x: W - e.x, y: H - e.y, angle: 180 + e.angle },
-  ]);
+  const near = (v: number, at: number[]) => at.some((t) => Math.abs(v - t) < 1);
+  const elements = inner.elements.flatMap((el) => {
+    // A circle centred on an axis is its own reflection there: it is drawn
+    // once, halved by the axis, and points along the axis so the motif in it
+    // reads the same on both sides.
+    const onX = near(el.x, [0, w]);
+    const onY = near(el.y, [0, h]);
+    const e = { ...el };
+    if (onX && onY) e.angle = 270;
+    else if (onX) e.angle = e.angle % 360 < 180 ? 90 : 270;
+    else if (onY)
+      e.angle = e.angle % 360 < 90 || e.angle % 360 >= 270 ? 0 : 180;
+    const out = [e];
+    if (!onX)
+      out.push({ ...e, id: `${e.id}-h`, x: W - e.x, angle: 180 - e.angle });
+    if (!onY) out.push({ ...e, id: `${e.id}-v`, y: H - e.y, angle: -e.angle });
+    if (!onX && !onY)
+      out.push({
+        ...e,
+        id: `${e.id}-hv`,
+        x: W - e.x,
+        y: H - e.y,
+        angle: 180 + e.angle,
+      });
+    return out;
+  });
   return { elements, warnings: inner.warnings, mirrorAxes: true };
 }
 
@@ -1126,10 +1183,11 @@ export function generateLayout(params: LayoutParams): LayoutResult {
   const { shape } = params;
   const isFree =
     !!shape || repeatStyle === "scattered" || repeatStyle === "ditsy";
-  const domain = shape
-    ? shapeDomain(shape, width, height)
-    : rectDomain(width, height);
-  if (params.edgeGapShare !== undefined) domain.edgeShare = params.edgeGapShare;
+  const domain = params.mirrorQuarter
+    ? mirrorDomain(width, height)
+    : shape
+      ? shapeDomain(shape, width, height)
+      : rectDomain(width, height);
   const shapeCount = (t: number) =>
     shape ? Math.max(1, Math.round((t * domain.area) / (width * height))) : t;
 
