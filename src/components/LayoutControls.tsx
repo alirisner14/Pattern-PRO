@@ -3,11 +3,7 @@
 import RepeatStylePictograph from "@/components/RepeatStylePictograph";
 import { DEFAULT_CLASS_COLORS } from "@/lib/layout/constants";
 import type { TierColors } from "@/lib/colorPrefs";
-import type {
-  LayerType,
-  PatternSettings,
-  RepeatStyle,
-} from "@/lib/layout/types";
+import type { PatternSettings, RepeatStyle } from "@/lib/layout/types";
 import OgeeVariantIcon from "@/components/OgeeVariantIcon";
 import {
   PROPORTIONED_OGEES,
@@ -17,30 +13,6 @@ import {
   type ShapeFit,
   type ShapeSides,
 } from "@/lib/shapes/shapes";
-
-const LAYERS: { value: LayerType; label: string; hint: string }[] = [
-  {
-    value: "main",
-    label: "Main",
-    hint: "Hero, secondary and filler elements.",
-  },
-  {
-    value: "large",
-    label: "Large",
-    hint: "Back layer: extra-large elements only.",
-  },
-  {
-    value: "small",
-    label: "Small",
-    hint: "Texture layer: extra-small elements, overlap optional.",
-  },
-];
-// Density each layer starts at when chosen.
-const LAYER_DENSITY: Record<LayerType, number> = {
-  main: 0.5,
-  large: 0.4,
-  small: 0.7,
-};
 
 // Repeat styles that reveal more settings when chosen.
 const MORE_OPTIONS: Partial<Record<RepeatStyle, string>> = {
@@ -292,37 +264,6 @@ export default function LayoutControls({
     <aside className="flex w-72 shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-200 p-4 dark:border-zinc-800">
       <div>
         <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-          Layer
-        </h2>
-        <div className="mt-2 grid grid-cols-3 gap-2">
-          {LAYERS.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() =>
-                onChange({
-                  ...value,
-                  layer: opt.value,
-                  density: LAYER_DENSITY[opt.value],
-                })
-              }
-              className={`rounded-md border p-2 text-xs transition-colors ${
-                value.layer === opt.value
-                  ? "border-zinc-900 bg-zinc-100 text-zinc-900 dark:border-zinc-50 dark:bg-zinc-800 dark:text-zinc-50"
-                  : "border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
-              }`}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-        <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
-          {LAYERS.find((l) => l.value === value.layer)?.hint} Each layer is its
-          own template.
-        </p>
-      </div>
-
-      <div>
-        <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
           Repeat Style
         </h2>
         <div className="mt-2 grid grid-cols-3 gap-2">
@@ -395,61 +336,54 @@ export default function LayoutControls({
             Elements
           </h2>
           <p className="mt-0.5 text-xs text-zinc-400 dark:text-zinc-500">
-            Distinct motifs per tier. Density sets how often they repeat.
+            Motifs per size (0 = off). Sizes stay fixed; this only changes the a
+            / b / c arrangement. Density sets how often they repeat.
           </p>
         </div>
-        {value.layer === "main" && (
-          <>
-            <TierRow
-              label="Hero (1)"
-              count={value.heroCount}
-              onCountChange={(v) => set("heroCount", v)}
-              color={colors.hero}
-              onColorChange={(c) => onColorsChange({ ...colors, hero: c })}
+        <TierRow
+          label="Extra large (XL)"
+          count={value.xlCount}
+          onCountChange={(v) => set("xlCount", v)}
+          color={colors.xl}
+          onColorChange={(c) => onColorsChange({ ...colors, xl: c })}
+        />
+        <TierRow
+          label="Hero (1)"
+          count={value.heroCount}
+          onCountChange={(v) => set("heroCount", v)}
+          color={colors.hero}
+          onColorChange={(c) => onColorsChange({ ...colors, hero: c })}
+        />
+        <TierRow
+          label="Secondary (2)"
+          count={value.secondaryCount}
+          onCountChange={(v) => set("secondaryCount", v)}
+          color={colors.secondary}
+          onColorChange={(c) => onColorsChange({ ...colors, secondary: c })}
+        />
+        <TierRow
+          label="Filler (3)"
+          count={value.fillerCount}
+          onCountChange={(v) => set("fillerCount", v)}
+          color={colors.filler}
+          onColorChange={(c) => onColorsChange({ ...colors, filler: c })}
+        />
+        <TierRow
+          label="Extra small (XS)"
+          count={value.xsCount}
+          onCountChange={(v) => set("xsCount", v)}
+          color={colors.xs}
+          onColorChange={(c) => onColorsChange({ ...colors, xs: c })}
+        />
+        {value.xsCount > 0 && (
+          <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+            <input
+              type="checkbox"
+              checked={value.allowOverlap}
+              onChange={(e) => set("allowOverlap", e.target.checked)}
             />
-            <TierRow
-              label="Secondary (2)"
-              count={value.secondaryCount}
-              onCountChange={(v) => set("secondaryCount", v)}
-              color={colors.secondary}
-              onColorChange={(c) => onColorsChange({ ...colors, secondary: c })}
-            />
-            <TierRow
-              label="Filler (3)"
-              count={value.fillerCount}
-              onCountChange={(v) => set("fillerCount", v)}
-              color={colors.filler}
-              onColorChange={(c) => onColorsChange({ ...colors, filler: c })}
-            />
-          </>
-        )}
-        {value.layer === "large" && (
-          <TierRow
-            label="Extra large (XL)"
-            count={value.largeCount}
-            onCountChange={(v) => set("largeCount", v)}
-            color={colors.hero}
-            onColorChange={(c) => onColorsChange({ ...colors, hero: c })}
-          />
-        )}
-        {value.layer === "small" && (
-          <>
-            <TierRow
-              label="Extra small (XS)"
-              count={value.smallCount}
-              onCountChange={(v) => set("smallCount", v)}
-              color={colors.filler}
-              onColorChange={(c) => onColorsChange({ ...colors, filler: c })}
-            />
-            <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
-              <input
-                type="checkbox"
-                checked={value.allowOverlap}
-                onChange={(e) => set("allowOverlap", e.target.checked)}
-              />
-              Allow overlap
-            </label>
-          </>
+            Extra small may overlap
+          </label>
         )}
         {customColors && (
           <button

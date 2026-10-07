@@ -1,4 +1,5 @@
-export type ElementClass = "hero" | "secondary" | "filler";
+// Five fixed sizes. Extra large and extra small are optional (count 0 = off).
+export type ElementClass = "xl" | "hero" | "secondary" | "filler" | "xs";
 import type {
   OgeeCurve,
   OgeeProportion,
@@ -19,10 +20,6 @@ export type RepeatStyle =
   | "diamond"
   | "ogee";
 
-// Main: the three tiers. Large: a back layer of extra-large elements only.
-// Small: a texture layer of extra-small elements, optionally overlapping.
-export type LayerType = "main" | "large" | "small";
-
 export interface ElementClassConfig {
   count: number;
   color: string;
@@ -39,8 +36,10 @@ export interface LayoutParams {
   filler: ElementClassConfig;
   // Diamond/Ogee: the layout goes inside this shape.
   shape?: ShapeModel;
-  layer?: LayerType;
-  // Small layer: elements may overlap once it gets dense.
+  // Optional extra tiers (off when absent or count 0).
+  xl?: ElementClassConfig;
+  xs?: ElementClassConfig;
+  // Extra-small elements may overlap the others instead of fitting between.
   allowOverlap?: boolean;
 }
 
@@ -66,9 +65,8 @@ export interface LayoutResult {
 }
 
 export interface PatternSettings {
-  layer: LayerType;
-  largeCount: number;
-  smallCount: number;
+  xlCount: number;
+  xsCount: number;
   allowOverlap: boolean;
   repeatStyle: RepeatStyle;
   density: number;

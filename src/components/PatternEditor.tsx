@@ -21,9 +21,8 @@ interface PatternEditorProps {
 }
 
 const DEFAULT_SETTINGS: PatternSettings = {
-  layer: "main",
-  largeCount: 3,
-  smallCount: 4,
+  xlCount: 0,
+  xsCount: 0,
   allowOverlap: false,
   repeatStyle: "grid",
   density: 0.5,
@@ -109,26 +108,18 @@ export default function PatternEditor({
         repeatStyle,
         density: settings.density,
         seed,
-        layer: settings.layer,
         allowOverlap: settings.allowOverlap,
-        hero: {
-          count:
-            settings.layer === "large"
-              ? settings.largeCount
-              : settings.heroCount,
-          color: DEFAULT_CLASS_COLORS.hero,
-        },
+        xl: { count: settings.xlCount, color: DEFAULT_CLASS_COLORS.xl },
+        hero: { count: settings.heroCount, color: DEFAULT_CLASS_COLORS.hero },
         secondary: {
           count: settings.secondaryCount,
           color: DEFAULT_CLASS_COLORS.secondary,
         },
         filler: {
-          count:
-            settings.layer === "small"
-              ? settings.smallCount
-              : settings.fillerCount,
+          count: settings.fillerCount,
           color: DEFAULT_CLASS_COLORS.filler,
         },
+        xs: { count: settings.xsCount, color: DEFAULT_CLASS_COLORS.xs },
         shape: shape ?? undefined,
       }),
     [
@@ -139,9 +130,8 @@ export default function PatternEditor({
       settings.heroCount,
       settings.secondaryCount,
       settings.fillerCount,
-      settings.layer,
-      settings.largeCount,
-      settings.smallCount,
+      settings.xlCount,
+      settings.xsCount,
       settings.allowOverlap,
       seed,
       shape,
@@ -179,7 +169,7 @@ export default function PatternEditor({
         showEdgeRepeats={settings.showEdgeRepeats}
         trellis={layout.trellis}
         mirrorAxes={layout.mirrorAxes}
-        exportName={`template-${settings.layer}-${settings.repeatStyle}`}
+        exportName={`template-${settings.repeatStyle}`}
         onReset={onReset}
       />
     </div>

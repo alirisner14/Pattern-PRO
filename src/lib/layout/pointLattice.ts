@@ -78,6 +78,11 @@ export function bestQuality(n: number, width: number, height: number): number {
   );
 }
 
+// Spacing (shortest lattice vector) of the best lattice for n points.
+export function bestSpacing(n: number, width: number, height: number): number {
+  return Math.max(...latticeShapes(n, width, height).map((s) => s.lambda));
+}
+
 // How many anchors to actually use for a requested count: a nearby count
 // whose best lattice is notably more even (5 beats 6, say) is preferred.
 export function chooseCount(
@@ -85,8 +90,10 @@ export function chooseCount(
   width: number,
   height: number,
 ): number {
-  const lo = Math.max(1, Math.min(target - 1, Math.floor(target * 0.8)));
-  const hi = Math.max(target + 1, Math.ceil(target * 1.2));
+  // For big counts only a handful of neighbours are compared, to stay fast.
+  const reach = Math.min(Math.ceil(target * 0.2), 8);
+  const lo = Math.max(1, Math.min(target - 1, target - reach));
+  const hi = Math.max(target + 1, target + reach);
   let best = target;
   let bestScore = -Infinity;
   for (let n = lo; n <= hi; n++) {

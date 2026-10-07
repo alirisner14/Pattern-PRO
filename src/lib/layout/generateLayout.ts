@@ -12,6 +12,7 @@ import { rectDomain, shapeDomain, type Domain } from "./domain";
 import { signedDistance } from "../shapes/polygon";
 import { fillGaps, roomAt } from "./packing";
 import {
+  bestSpacing,
   chooseCount,
   latticePoints,
   pickLattice,
@@ -20,21 +21,26 @@ import {
 import { RADIUS_RATIO } from "./constants";
 import type {
   ElementClass,
+  ElementClassConfig,
   LayoutParams,
   LayoutResult,
   PlacedElement,
 } from "./types";
 
-const CLASS_ORDER: ElementClass[] = ["hero", "secondary", "filler"];
-const CLASS_NUMBER: Record<ElementClass, number> = {
-  hero: 1,
-  secondary: 2,
-  filler: 3,
+const CLASS_ORDER: ElementClass[] = ["xl", "hero", "secondary", "filler", "xs"];
+const CLASS_PREFIX: Record<ElementClass, string> = {
+  xl: "XL",
+  hero: "1",
+  secondary: "2",
+  filler: "3",
+  xs: "XS",
 };
 const CLASS_NAME: Record<ElementClass, string> = {
+  xl: "Extra large",
   hero: "Hero",
   secondary: "Secondary",
   filler: "Filler",
+  xs: "Extra small",
 };
 
 // Fractions of the anchor lattice's nearest-neighbour spacing. Tuned so the
@@ -59,6 +65,10 @@ const MOTIF_PASSES = 30;
 // A lattice vector counts as a neighbour link (so its midpoint is a saddle)
 // when it is at most this much longer than the shortest one.
 const SADDLE_REACH = 1.2;
+// A saddle accepts a circle that leaves at least this share of the normal gap.
+const SADDLE_MIN_GAP = 0.4;
+// With only two sizes the smaller fills every gap at this share of the gap.
+const TWO_TIER_GAP = 0.4;
 // How much a single-size layer (Large, Small) drifts off its lattice: all
 // identical circles on a perfect lattice would read as mechanical.
 const SINGLE_TIER_LOOSENESS = 0.4;
@@ -71,6 +81,8 @@ const SLIVER_SHIFT_STEPS = 12;
 // Rotation: neighbours compared against, and candidate angles tried.
 const ANGLE_NEIGHBOURS = 6;
 const ANGLE_CANDIDATES = 24;
+// Neighbouring elements are never rotated closer together than this.
+const MIN_NEIGHBOUR_TURN = 25;
 // Spacing relaxation: rounds, and the share of the area the circles (plus
 // half the gap around each) should fill.
 const RELAX_ITERATIONS = 80;
@@ -170,11 +182,28 @@ function gridInstances(
     if (tilted) {
       // A tilted lattice has two kinds of gap, as in the benchmark template:
       // the deep holes (the middle of each cell) and the saddles (midway
-      // between neighbouring anchors). The middle tier takes the holes and
-      // the smallest tier takes the saddles, one each. With only two tiers
-      // the smaller one takes both.
+      // between neighbouring anchors). The first smaller tier takes the holes,
+      // the next the saddles, one each; any further tiers fill what is left.
+      // With only one smaller tier it takes both.
       const isLast = i === rest.length - 1;
-      if (!isLast || rest.length === 1) {
+      if (i === 0 && isLast) {
+        // Only two sizes: nothing to hand the saddles to, so the smaller
+        // one fills every gap, biggest first (a little tighter, so the
+        // hole in a hexagonal cell still takes one).
+        for (const p of fillGaps({
+          candidates,
+          placed,
+          radius: r,
+          gap: gap * TWO_TIER_GAP,
+          dist,
+          step,
+          maxCount: Infinity,
+        })) {
+          offsets.push({ ...p, r, cls });
+        }
+        return;
+      }
+      if (i === 0) {
         for (const p of fillGaps({
           candidates,
           placed,
@@ -188,10 +217,24 @@ function gridInstances(
           offsets.push({ ...p, r, cls });
         }
       }
-      if (isLast) {
+      if (i === 1) {
         for (const p of saddlePoints(lattice.t1, lattice.t2)) {
-          if (roomAt(p, placed, dist) < r + gap) continue;
+          if (roomAt(p, placed, dist) < r + SADDLE_MIN_GAP * gap) continue;
           placed.push({ x: p.x, y: p.y, r });
+          offsets.push({ ...p, r, cls });
+        }
+      }
+      if (i >= 2) {
+        for (const p of fillGaps({
+          candidates,
+          placed,
+          radius: r,
+          gap,
+          dist,
+          step,
+          maxCount: isLast ? Infinity : 2,
+          relativeRoom: isLast ? undefined : 0.75,
+        })) {
           offsets.push({ ...p, r, cls });
         }
       }
@@ -322,7 +365,7 @@ function seamShift(
   rng: Rng,
 ): Instance[] {
   // More elements means more edges to keep clear, so look at more slides.
-  const S = items.length <= 40 ? 12 : items.length <= 150 ? 24 : 40;
+  const S = items.length <= 40 ? 24 : items.length <= 150 ? 24 : 40;
   const BINS = 48;
   const options: { dx: number; dy: number; sliver: number; cover: number }[] =
     [];
@@ -691,7 +734,7 @@ function overlappingInstances(
 
 // How much of an element pokes across an edge it straddles: a piece
 // narrower than this share of its radius reads as a sliver.
-const SLIVER_SHARE = 0.45;
+const SLIVER_SHARE = 0.35;
 
 // Total sliver badness: for every element crossing an edge (or a tiling
 // shape's outline), how far its far-side piece falls short of a decent size.
@@ -829,6 +872,35 @@ function assignAngles(
     }
     el.angle = bestAngle % 360;
     done.push(el);
+  }
+  // A few late placements can end up squeezed between neighbours: give every
+  // element still within a close angle of its nearest neighbour a fresh pick.
+  for (let pass = 0; pass < 3; pass++) {
+    let changed = false;
+    for (const el of elements) {
+      const near = elements
+        .filter((o) => o !== el)
+        .sort((a, b) => dist(el, a) - dist(el, b))
+        .slice(0, ANGLE_NEIGHBOURS);
+      const worst = (angle: number) =>
+        Math.min(...near.map((n) => turn(angle, n.angle)));
+      if (worst(el.angle) >= MIN_NEIGHBOUR_TURN) continue;
+      let best = el.angle;
+      let bestGap = worst(best);
+      for (let k = 0; k < ANGLE_CANDIDATES; k++) {
+        const angle = (k * 360) / ANGLE_CANDIDATES + rng() * 5;
+        const g = worst(angle);
+        if (g > bestGap) {
+          bestGap = g;
+          best = angle;
+        }
+      }
+      if (best !== el.angle) {
+        el.angle = best % 360;
+        changed = true;
+      }
+    }
+    if (!changed) break;
   }
 }
 
@@ -1007,13 +1079,11 @@ function mirrorLayout(params: LayoutParams): LayoutResult {
 
 // Ditsy: tiny motifs, scattered this many times more densely.
 const DITSY_MULTIPLIER = 4;
-// Small layer: this many times more elements than the main layer.
-const SMALL_LAYER_MULTIPLIER = 8;
-// Small layer: elements fill less of their spacing, so they read as tiny.
-const SMALL_LAYER_SHARE = 0.6;
-// Large layer: elements fill more of their spacing.
-const LARGE_LAYER_SHARE = 1.25;
 const OVERLAP_SHARE = 0.6;
+// Extra-small elements that may overlap: this many per hero-sized anchor.
+const XS_OVERLAP_PER_ANCHOR = 6;
+// Never lay out more anchors than this, however small the tier.
+const MAX_ANCHORS = 1500;
 
 export function generateLayout(params: LayoutParams): LayoutResult {
   if (params.repeatStyle === "mirror" && !params.shape)
@@ -1025,91 +1095,114 @@ export function generateLayout(params: LayoutParams): LayoutResult {
     density,
     seed,
   } = params;
-  // The extra layers use a single tier: the hero's settings for Large, the
-  // filler's for Small.
-  const layer = params.layer ?? "main";
   const none = { count: 0, color: "" };
-  const configs = {
-    hero: layer === "small" ? none : params.hero,
-    secondary: layer === "main" ? params.secondary : none,
-    filler: layer === "large" ? none : params.filler,
+  const configs: Record<ElementClass, ElementClassConfig> = {
+    xl: params.xl ?? none,
+    hero: params.hero,
+    secondary: params.secondary,
+    filler: params.filler,
+    xs: params.xs ?? none,
   };
-  const prefixOf = (cls: ElementClass) =>
-    layer === "large"
-      ? "XL"
-      : layer === "small"
-        ? "XS"
-        : String(CLASS_NUMBER[cls]);
-  const active = CLASS_ORDER.filter((c) => configs[c].count > 0);
-  if (active.length === 0) return { elements: [], warnings: [] };
+  const present = CLASS_ORDER.filter((c) => configs[c].count > 0);
+  // Extra-small elements can be allowed to overlap; they are then scattered
+  // freely over everything else instead of packed between it.
+  const overlapXs = !!params.allowOverlap && configs.xs.count > 0;
+  const active = present.filter((c) => !(c === "xs" && overlapXs));
+  if (present.length === 0) return { elements: [], warnings: [] };
 
   const rng = mulberry32(seed);
   const target =
     anchorCountForDensity(density) *
-    (repeatStyle === "ditsy" ? DITSY_MULTIPLIER : 1) *
-    (layer === "small" ? SMALL_LAYER_MULTIPLIER : 1);
+    (repeatStyle === "ditsy" ? DITSY_MULTIPLIER : 1);
   const { shape } = params;
   const isFree =
     !!shape || repeatStyle === "scattered" || repeatStyle === "ditsy";
   const domain = shape
     ? shapeDomain(shape, width, height)
     : rectDomain(width, height);
-  const overlapping = layer === "small" && !!params.allowOverlap;
+  const shapeCount = (t: number) =>
+    shape ? Math.max(1, Math.round((t * domain.area) / (width * height))) : t;
+
+  // Every tier has one fixed size: a set multiple of the hero's radius, and
+  // the hero's radius comes from the density alone. So which tiers are on, or
+  // how many motifs they have, never resizes a circle. The largest tier that
+  // is on becomes the anchor and is laid out with just as many anchors as fit
+  // at its size (the hero: `target`; medium circles: four times as many).
+  const anchorCls: ElementClass = active[0] ?? "hero";
+  const anchorRatio = RADIUS_RATIO[anchorCls];
+  const anchorTarget = Math.min(
+    MAX_ANCHORS,
+    Math.max(1, Math.round(target / (anchorRatio * anchorRatio))),
+  );
   // Scattered and Ditsy sit on a tilted lattice: perfectly even, but with no
   // visible rows or columns.
-  const tiltedShape: LatticeShape | null =
-    !shape &&
-    !overlapping &&
-    (repeatStyle === "scattered" || repeatStyle === "ditsy")
-      ? pickLattice(chooseCount(target, width, height), width, height, rng)
-      : null;
-  const lattice: Lattice | null = tiltedShape
-    ? {
+  const tilted =
+    !shape && (repeatStyle === "scattered" || repeatStyle === "ditsy");
+  let tiltedShape: LatticeShape | null = null;
+  let lattice: Lattice | null = null;
+  let refSpacing: number;
+  if (tilted) {
+    refSpacing = bestSpacing(chooseCount(target, width, height), width, height);
+    if (active.length) {
+      tiltedShape = pickLattice(
+        chooseCount(anchorTarget, width, height),
+        width,
+        height,
+        rng,
+      );
+      lattice = {
         anchors: latticePoints(tiltedShape, width, height),
         t1: tiltedShape.t1,
         t2: tiltedShape.t2,
         cellW: Math.hypot(tiltedShape.t1.x, tiltedShape.t1.y),
         cellH: Math.hypot(tiltedShape.t2.x, tiltedShape.t2.y),
         spacing: tiltedShape.lambda,
+      };
+    }
+  } else if (isFree) {
+    refSpacing = Math.sqrt(domain.area / shapeCount(target));
+  } else {
+    refSpacing = buildLattice(width, height, repeatStyle, target).spacing;
+    if (active.length) {
+      // Use as many anchors as fit at the tier's fixed size: a grid can be
+      // forced tighter than asked (half-drop needs an even column count), so
+      // step down until the circles clear each other.
+      const needed =
+        ANCHOR_RADIUS *
+        refSpacing *
+        (repeatStyle === "lattice" ? LATTICE_ANCHOR_SHARE : 1) *
+        anchorRatio;
+      let t = anchorTarget;
+      lattice = buildLattice(width, height, repeatStyle, t);
+      while (t > 1 && needed > ((1 - GAP) * lattice.spacing) / 2) {
+        t--;
+        lattice = buildLattice(width, height, repeatStyle, t);
       }
-    : isFree
-      ? null
-      : buildLattice(width, height, repeatStyle, target);
-  // A shape gets anchors in proportion to its share of the canvas; spacing
-  // is area-per-anchor either way, so circle sizes match the grids.
-  const anchorCount = shape
-    ? Math.max(1, Math.round((target * domain.area) / (width * height)))
-    : target;
+    }
+  }
+  const anchorCount = shapeCount(anchorTarget);
   const spacing = lattice
     ? lattice.spacing
     : Math.sqrt(domain.area / anchorCount);
 
   // Narrow shapes (a concave diamond's arms) can't hold full-size circles,
-  // so cap the anchor at half the shape's inner radius and let the smaller
-  // tiers reach into the thin parts.
+  // so cap the reference radius at half the shape's inner radius.
   const inradius =
     shape && !shape.regionTiles
       ? signedDistance({ x: width / 2, y: height / 2 }, shape.region)
       : Infinity;
-  const anchorRadius = Math.min(
+  const refRadius = Math.min(
     ANCHOR_RADIUS *
-      spacing *
-      (repeatStyle === "lattice" ? LATTICE_ANCHOR_SHARE : 1) *
-      (layer === "large"
-        ? LARGE_LAYER_SHARE
-        : layer === "small"
-          ? SMALL_LAYER_SHARE
-          : 1),
+      refSpacing *
+      (repeatStyle === "lattice" ? LATTICE_ANCHOR_SHARE : 1),
     INRADIUS_SHARE * inradius,
   );
-  const radiusOf: RadiusOf = (cls) =>
-    (anchorRadius * RADIUS_RATIO[cls]) / RADIUS_RATIO[active[0]];
-  // Overlap lets small elements sit up to this share of their radius into
-  // each other once the layer is dense.
-  const gap =
-    layer === "small" && params.allowOverlap
-      ? -OVERLAP_SHARE * anchorRadius
-      : GAP * spacing;
+  const gap = GAP * spacing;
+  const radiusOf: RadiusOf = (cls) => {
+    const r = refRadius * RADIUS_RATIO[cls];
+    // The anchors must clear each other even on an unusual lattice.
+    return lattice && cls === anchorCls ? Math.min(r, (spacing - gap) / 2) : r;
+  };
 
   // Lattice circles stay inside their diamond, clear of the trellis lines.
   const trellisBound =
@@ -1123,16 +1216,8 @@ export function generateLayout(params: LayoutParams): LayoutResult {
           );
         }
       : undefined;
-  const instances = overlapping
-    ? overlappingInstances(
-        Math.round((anchorCount * width * height) / domain.area),
-        domain,
-        active[0],
-        anchorRadius,
-        width,
-        height,
-        rng,
-      )
+  const instances: Instance[] = !active.length
+    ? []
     : lattice
       ? gridInstances(
           lattice,
@@ -1155,52 +1240,66 @@ export function generateLayout(params: LayoutParams): LayoutResult {
           rng,
         );
 
-  const placedInstances = tiltedShape
-    ? trimSlivers(
-        seamShift(
-          loosen(
-            instances,
-            domain.dist,
-            gap,
-            active.length === 1 ? SINGLE_TIER_LOOSENESS : 0,
+  const laidOut = !active.length
+    ? []
+    : tiltedShape
+      ? trimSlivers(
+          seamShift(
+            loosen(
+              instances,
+              domain.dist,
+              gap,
+              active.length === 1 ? SINGLE_TIER_LOOSENESS : 0,
+              width,
+              height,
+              rng,
+            ),
+            tiltedShape.t1,
+            tiltedShape.t2,
             width,
             height,
             rng,
           ),
-          tiltedShape.t1,
-          tiltedShape.t2,
+          domain.dist,
+          gap,
           width,
           height,
-          rng,
-        ),
-        domain.dist,
-        gap,
+        )
+      : repeatStyle === "lattice"
+        ? instances
+        : avoidSlivers(
+            instances,
+            domain,
+            shape,
+            width,
+            height,
+            spacing,
+            gap,
+            isFree,
+          );
+  const xsFree: Instance[] = overlapXs
+    ? overlappingInstances(
+        Math.round(target * XS_OVERLAP_PER_ANCHOR),
+        domain,
+        "xs",
+        radiusOf("xs"),
         width,
         height,
+        rng,
       )
-    : repeatStyle === "lattice" || overlapping
-      ? instances
-      : avoidSlivers(
-          instances,
-          domain,
-          shape,
-          width,
-          height,
-          spacing,
-          gap,
-          isFree,
-        );
+    : [];
+  const placedInstances = [...laidOut, ...xsFree];
 
   const dist = domain.dist;
   const elements: PlacedElement[] = [];
   const warnings: string[] = [];
 
-  for (const cls of active) {
+  for (const cls of present) {
     const members = placedInstances.filter((i) => i.cls === cls);
     const motifCount = configs[cls].count;
     if (members.length < motifCount) {
       warnings.push(
-        `${layer === "large" ? "Large" : layer === "small" ? "Small" : CLASS_NAME[cls]}: ${motifCount} motifs but only ${members.length} spots fit. Raise Density or lower the count.`,
+        `${CLASS_NAME[cls]}: ${motifCount} motifs but only ${members.length} spots fit. Raise Density or lower the count.`,
       );
     }
     const motifs = assignMotifs(members, motifCount, dist, rng, width, height);
@@ -1208,7 +1307,7 @@ export function generateLayout(params: LayoutParams): LayoutResult {
       elements.push({
         id: `${cls}-${i}`,
         class: cls,
-        label: labelFor(prefixOf(cls), motifs[i], motifCount),
+        label: labelFor(CLASS_PREFIX[cls], motifs[i], motifCount),
         x: m.x,
         y: m.y,
         radius: m.r,
