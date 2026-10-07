@@ -11,6 +11,12 @@ import {
 import { rectDomain, shapeDomain, type Domain } from "./domain";
 import { signedDistance } from "../shapes/polygon";
 import { fillGaps, roomAt } from "./packing";
+import {
+  chooseCount,
+  latticePoints,
+  pickLattice,
+  type LatticeShape,
+} from "./pointLattice";
 import { RADIUS_RATIO } from "./constants";
 import type {
   ElementClass,
@@ -50,6 +56,12 @@ const LATTICE_ANCHOR_SHARE = 0.7;
 const LATTICE_CORNERS = 4;
 // Upper bound on improvement passes when spreading motifs apart.
 const MOTIF_PASSES = 30;
+// A lattice vector counts as a neighbour link (so its midpoint is a saddle)
+// when it is at most this much longer than the shortest one.
+const SADDLE_REACH = 1.2;
+// How much a single-size layer (Large, Small) drifts off its lattice: all
+// identical circles on a perfect lattice would read as mechanical.
+const SINGLE_TIER_LOOSENESS = 0.4;
 const MOTIF_FALLOFF = 4;
 // Weight of the half-and-half balance, and how many starting deals to try.
 const MOTIF_BALANCE = 1;
@@ -116,6 +128,7 @@ function gridInstances(
   height: number,
   bound?: (p: Vec) => number,
   corners = Infinity,
+  tilted = false,
 ): Instance[] {
   const dist = latticeDistance(lattice.t1, lattice.t2);
   const { cellW, cellH } = lattice;
@@ -125,10 +138,20 @@ function gridInstances(
   const candidates: Vec[] = [];
   for (let i = 0; i < CELL_SAMPLES; i++) {
     for (let j = 0; j < CELL_SAMPLES; j++) {
-      candidates.push({
-        x: -cellW / 2 + ((i + 0.5) * cellW) / CELL_SAMPLES,
-        y: -cellH / 2 + ((j + 0.5) * cellH) / CELL_SAMPLES,
-      });
+      if (tilted) {
+        // A tilted lattice's cell is a parallelogram around the anchor.
+        const a = (i + 0.5) / CELL_SAMPLES - 0.5;
+        const b = (j + 0.5) / CELL_SAMPLES - 0.5;
+        candidates.push({
+          x: a * lattice.t1.x + b * lattice.t2.x,
+          y: a * lattice.t1.y + b * lattice.t2.y,
+        });
+      } else {
+        candidates.push({
+          x: -cellW / 2 + ((i + 0.5) * cellW) / CELL_SAMPLES,
+          y: -cellH / 2 + ((j + 0.5) * cellH) / CELL_SAMPLES,
+        });
+      }
     }
   }
   const step = Math.max(cellW, cellH) / CELL_SAMPLES;
@@ -136,10 +159,44 @@ function gridInstances(
   const offsets: Instance[] = [];
   active.slice(1).forEach((cls, i, rest) => {
     const r = radiusOf(cls);
+    // Tilted lattices fill every hole as roomy as the best one (one in a
+    // square cell, two in a hexagonal one); the rest go to the smaller tier.
     const maxCount =
       i < rest.length - 1
-        ? Math.floor(MIDDLE_TIER_PER_ANCHOR)
+        ? tilted
+          ? 2
+          : Math.floor(MIDDLE_TIER_PER_ANCHOR)
         : Math.max(0, corners - offsets.length);
+    if (tilted) {
+      // A tilted lattice has two kinds of gap, as in the benchmark template:
+      // the deep holes (the middle of each cell) and the saddles (midway
+      // between neighbouring anchors). The middle tier takes the holes and
+      // the smallest tier takes the saddles, one each. With only two tiers
+      // the smaller one takes both.
+      const isLast = i === rest.length - 1;
+      if (!isLast || rest.length === 1) {
+        for (const p of fillGaps({
+          candidates,
+          placed,
+          radius: r,
+          gap,
+          dist,
+          step,
+          maxCount: 2,
+          relativeRoom: 0.8,
+        })) {
+          offsets.push({ ...p, r, cls });
+        }
+      }
+      if (isLast) {
+        for (const p of saddlePoints(lattice.t1, lattice.t2)) {
+          if (roomAt(p, placed, dist) < r + gap) continue;
+          placed.push({ x: p.x, y: p.y, r });
+          offsets.push({ ...p, r, cls });
+        }
+      }
+      return;
+    }
     for (const p of fillGaps({
       candidates,
       placed,
@@ -167,6 +224,166 @@ function gridInstances(
     }
   }
   return out;
+}
+
+// After the best slide, a dense layout may still have the odd element with a
+// thin piece over an edge. Nudge each one along that axis: either fully
+// inside, or far enough across that the piece is a decent size — whichever
+// still leaves it clear of its neighbours.
+function trimSlivers(
+  items: Instance[],
+  dist: DistanceFn,
+  gap: number,
+  width: number,
+  height: number,
+): Instance[] {
+  const out = items.map((it) => ({ ...it }));
+  for (let i = 0; i < out.length; i++) {
+    for (const axis of ["x", "y"] as const) {
+      const it = out[i];
+      const size = axis === "x" ? width : height;
+      const v = it[axis];
+      const inward = v < size / 2 ? 1 : -1;
+      const piece = it.r - Math.min(v, size - v);
+      if (!(piece > 0 && piece < SLIVER_SHARE * it.r)) continue;
+      for (const move of [piece + 1, -(SLIVER_SHARE * it.r - piece + 1)]) {
+        const to = { ...it, [axis]: wrap(v + inward * move, size) };
+        const clear = out.every(
+          (o, j) => j === i || dist(o, to) - o.r - it.r >= 0.1 * gap,
+        );
+        if (clear) {
+          out[i] = to;
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// Midpoints of the shortest lattice vectors: the saddles between neighbouring
+// anchors. One per edge of the lattice's cell (two in a square lattice, three
+// in a hexagonal one); the longer diagonals don't count.
+function saddlePoints(t1: Vec, t2: Vec): Vec[] {
+  const shortest = Math.hypot(t1.x, t1.y);
+  return [
+    t1,
+    t2,
+    { x: t1.x + t2.x, y: t1.y + t2.y },
+    { x: t1.x - t2.x, y: t1.y - t2.y },
+  ]
+    .filter((v) => Math.hypot(v.x, v.y) <= shortest * SADDLE_REACH)
+    .map((v) => ({ x: v.x / 2, y: v.y / 2 }));
+}
+
+// Loosen a lattice layout: every element drifts a random amount within its
+// own spare room. Each may use at most half of the spare room it has to its
+// nearest neighbour, so even if two drift towards each other they cannot
+// touch, and the spacing stays balanced.
+function loosen(
+  items: Instance[],
+  dist: DistanceFn,
+  gap: number,
+  amount: number,
+  width: number,
+  height: number,
+  rng: Rng,
+): Instance[] {
+  if (amount <= 0) return items;
+  return items.map((it, i) => {
+    let room = Infinity;
+    for (let j = 0; j < items.length; j++) {
+      if (j !== i)
+        room = Math.min(room, dist(it, items[j]) - it.r - items[j].r);
+    }
+    const reach = 0.5 * amount * Math.max(0, room - gap);
+    if (!(reach > 0)) return it;
+    const angle = rng() * Math.PI * 2;
+    const d = reach * Math.sqrt(rng());
+    return {
+      ...it,
+      x: wrap(it.x + Math.cos(angle) * d, width),
+      y: wrap(it.y + Math.sin(angle) * d, height),
+    };
+  });
+}
+
+// A lattice layout can slide anywhere without changing any spacing, so slide
+// it to where the tile's edges cut the elements best: no thin slivers, and
+// as much of the two seam lines as possible running through elements (so a
+// shrunk, repeated tile has no bare stripes). Among equally good slides one
+// is picked at random, which is what makes each rebuild look different.
+function seamShift(
+  items: Instance[],
+  t1: Vec,
+  t2: Vec,
+  width: number,
+  height: number,
+  rng: Rng,
+): Instance[] {
+  // More elements means more edges to keep clear, so look at more slides.
+  const S = items.length <= 40 ? 12 : items.length <= 150 ? 24 : 40;
+  const BINS = 48;
+  const options: { dx: number; dy: number; sliver: number; cover: number }[] =
+    [];
+
+  for (let a = 0; a < S; a++) {
+    for (let b = 0; b < S; b++) {
+      const dx = (a / S) * t1.x + (b / S) * t2.x;
+      const dy = (a / S) * t1.y + (b / S) * t2.y;
+      const covered = new Uint8Array(2 * BINS);
+      let sliver = 0;
+      for (const it of items) {
+        const x = wrap(it.x + dx, width);
+        const y = wrap(it.y + dy, height);
+        const ex = Math.min(x, width - x);
+        const ey = Math.min(y, height - y);
+        for (const d of [ex, ey, Math.hypot(ex, ey)]) {
+          const piece = it.r - d;
+          if (piece > 0 && piece < SLIVER_SHARE * it.r) {
+            sliver += (SLIVER_SHARE * it.r - piece) / it.r;
+          }
+        }
+        // Which stretch of each seam line this element covers.
+        const mark = (
+          offset: number,
+          near: number,
+          along: number,
+          size: number,
+        ) => {
+          if (near >= it.r) return;
+          const half = Math.sqrt(it.r * it.r - near * near);
+          const lo = Math.floor(((along - half) / size) * BINS);
+          const hi = Math.floor(((along + half) / size) * BINS);
+          for (let k = lo; k <= hi; k++) {
+            covered[offset + (((k % BINS) + BINS) % BINS)] = 1;
+          }
+        };
+        mark(0, ex, y, height);
+        mark(BINS, ey, x, width);
+      }
+      let cover = 0;
+      for (const c of covered) cover += c;
+      options.push({ dx, dy, sliver, cover: cover / (2 * BINS) });
+    }
+  }
+
+  const clean = options.filter((o) => o.sliver < 1e-9);
+  const pool = clean.length ? clean : options;
+  const key = (o: (typeof options)[number]) => (clean.length ? 0 : o.sliver);
+  const bestKey = Math.min(...pool.map(key));
+  const finalists = pool.filter((o) => key(o) <= bestKey + 1e-9);
+  finalists.sort((p, q) => q.cover - p.cover);
+  const top = finalists.slice(
+    0,
+    Math.max(3, Math.ceil(finalists.length * 0.25)),
+  );
+  const chosen = top[Math.floor(rng() * top.length)];
+  return items.map((it) => ({
+    ...it,
+    x: wrap(it.x + chosen.dx, width),
+    y: wrap(it.y + chosen.dy, height),
+  }));
 }
 
 // When the tile is shrunk and repeated, a seam nothing crosses reads as a
@@ -837,9 +1054,27 @@ export function generateLayout(params: LayoutParams): LayoutResult {
   const domain = shape
     ? shapeDomain(shape, width, height)
     : rectDomain(width, height);
-  const lattice = isFree
-    ? null
-    : buildLattice(width, height, repeatStyle, target);
+  const overlapping = layer === "small" && !!params.allowOverlap;
+  // Scattered and Ditsy sit on a tilted lattice: perfectly even, but with no
+  // visible rows or columns.
+  const tiltedShape: LatticeShape | null =
+    !shape &&
+    !overlapping &&
+    (repeatStyle === "scattered" || repeatStyle === "ditsy")
+      ? pickLattice(chooseCount(target, width, height), width, height, rng)
+      : null;
+  const lattice: Lattice | null = tiltedShape
+    ? {
+        anchors: latticePoints(tiltedShape, width, height),
+        t1: tiltedShape.t1,
+        t2: tiltedShape.t2,
+        cellW: Math.hypot(tiltedShape.t1.x, tiltedShape.t1.y),
+        cellH: Math.hypot(tiltedShape.t2.x, tiltedShape.t2.y),
+        spacing: tiltedShape.lambda,
+      }
+    : isFree
+      ? null
+      : buildLattice(width, height, repeatStyle, target);
   // A shape gets anchors in proportion to its share of the canvas; spacing
   // is area-per-anchor either way, so circle sizes match the grids.
   const anchorCount = shape
@@ -888,7 +1123,6 @@ export function generateLayout(params: LayoutParams): LayoutResult {
           );
         }
       : undefined;
-  const overlapping = layer === "small" && !!params.allowOverlap;
   const instances = overlapping
     ? overlappingInstances(
         Math.round((anchorCount * width * height) / domain.area),
@@ -909,6 +1143,7 @@ export function generateLayout(params: LayoutParams): LayoutResult {
           height,
           trellisBound,
           trellisBound ? LATTICE_CORNERS : Infinity,
+          !!tiltedShape,
         )
       : scatteredInstances(
           anchorCount,
@@ -920,8 +1155,30 @@ export function generateLayout(params: LayoutParams): LayoutResult {
           rng,
         );
 
-  const placedInstances =
-    repeatStyle === "lattice" || overlapping
+  const placedInstances = tiltedShape
+    ? trimSlivers(
+        seamShift(
+          loosen(
+            instances,
+            domain.dist,
+            gap,
+            active.length === 1 ? SINGLE_TIER_LOOSENESS : 0,
+            width,
+            height,
+            rng,
+          ),
+          tiltedShape.t1,
+          tiltedShape.t2,
+          width,
+          height,
+          rng,
+        ),
+        domain.dist,
+        gap,
+        width,
+        height,
+      )
+    : repeatStyle === "lattice" || overlapping
       ? instances
       : avoidSlivers(
           instances,

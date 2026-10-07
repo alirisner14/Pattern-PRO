@@ -75,6 +75,10 @@ interface FillOptions {
   // points and from each other, so one tier spreads out instead of
   // chaining through neighbouring gaps.
   spreadFrom?: Vec[];
+  // After the first placement, only fill gaps at least this share as roomy
+  // as the first one — e.g. both deep holes of a hexagonal cell, but not the
+  // narrower gaps between neighbours.
+  relativeRoom?: number;
 }
 
 // Repeatedly drop a circle into the roomiest remaining gap until no gap can
@@ -92,10 +96,11 @@ export function fillGaps({
   centre = true,
   bound,
   spreadFrom,
+  relativeRoom,
 }: FillOptions): Vec[] {
   const room = candidates.map((c) => roomAt(c, placed, dist, bound));
   const added: Vec[] = [];
-  const needed = radius + gap;
+  let needed = radius + gap;
   // Distance from each candidate to the nearest point of the same tier.
   const apart = spreadFrom
     ? candidates.map((c) =>
@@ -128,6 +133,9 @@ export function fillGaps({
     const p = centre
       ? centreInGap(candidates[bestIndex], placed, dist, step, bound)
       : candidates[bestIndex];
+    if (relativeRoom && added.length === 0) {
+      needed = Math.max(needed, relativeRoom * roomAt(p, placed, dist, bound));
+    }
     const circle = { x: p.x, y: p.y, r: radius };
     placed.push(circle);
     added.push(p);
