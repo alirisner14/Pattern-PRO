@@ -53,21 +53,28 @@ export interface ShapeModel {
 
 const SIDE_SAMPLES = 64;
 // Concave/convex bow depth and ogee S-curve sway, as fractions of side length.
-const BOW = 0.2;
+// (A bow of 0.21 would turn the diamond into a circle, so keep it gentle.)
+const BOW = 0.07;
 const OGEE_SWAY: Record<OgeeCurve, number> = {
   subtle: 0.06,
   medium: 0.1,
   deep: 0.14,
 };
-// Lantern shoulder: where the step sits along the side, and how deep it is
-// relative to the sway.
-const LANTERN_STEP: [number, number] = [0.58, 0.72];
+// Arabesque notch depth, relative to the sway.
 const LANTERN_DEPTH = 0.4;
+// Lantern shoulder step: where it sits along the side, how long it is, and
+// how far in the neck above it is set (fractions of the side length).
+const LANTERN_JOG = 0.56;
+const LANTERN_JOG_LENGTH = 0.035;
+const LANTERN_JOG_DEPTH = 0.03;
 
 interface Profile {
   at: (s: number) => number;
   // Where the profile has a corner or a step, sampled exactly so edges stay crisp.
   breaks: number[];
+  // Square steps: the stretch [from, to] is skipped and its two ends joined
+  // by one horizontal and one vertical segment, stepping inward.
+  jogs?: [number, number][];
 }
 
 // Quatrefoil lobe-centre offset, drop tip sharpness, and star pinch, per Curve.
@@ -129,6 +136,8 @@ const BADGE_POINT: Record<OgeeCurve, number> = {
 };
 const BADGE_RIPPLE = 0.07;
 const BADGE_CORNER = 0.45;
+const BADGE_ROUND = 0.35;
+const BADGE_DIP = 0.12;
 const COLUMN_WIDTH: Record<OgeeProportion, number> = {
   skinny: 0.34,
   mid: 0.48,
@@ -167,15 +176,50 @@ function arc(s: number, sag: number): number {
   return Math.sqrt(Math.max(0, r * r - (s - 0.5) ** 2)) - (r - sag);
 }
 
+// The ogee S-curve: zero at both ends, bulging out then pinching in, and
+// leaving each end at slope k. With k = the cell's width / height the side
+// meets its neighbour smoothly at the rounded vertex (no corner at the left
+// and right of the shape) and closes into a clean point at the top and
+// bottom, as in a real ogee. `sway` sets the depth of the bulge.
+function ogeeCurve(sway: number, k: number): (s: number) => number {
+  const shape = (c: number) => (s: number) =>
+    s * (1 - s) * (1 - 2 * s) * (k + c * s * (1 - s));
+  const depth = (c: number) => {
+    let m = 0;
+    for (let i = 0; i <= 200; i++) m = Math.max(m, shape(c)(i / 200));
+    return m;
+  };
+  // Solve for the extra term that gives the requested depth; it can't go
+  // below -4k without the curve folding over itself.
+  let lo = -3.6 * k;
+  let hi = 40;
+  for (let i = 0; i < 50; i++) {
+    const mid = (lo + hi) / 2;
+    if (depth(mid) < sway) lo = mid;
+    else hi = mid;
+  }
+  return shape(lo);
+}
+
 // One ogee side from the rounded vertex (s=0) to the pointed vertex (s=1):
 // bulges out first, then pinches in toward the point.
-function ogeeProfile(style: OgeeStyle, sway: number): Profile {
-  const curve = (s: number) => sway * Math.sin(2 * Math.PI * s);
+function ogeeProfile(style: OgeeStyle, sway: number, k: number): Profile {
+  const curve =
+    style === "arabesque"
+      ? (s: number) => sway * Math.sin(2 * Math.PI * s)
+      : ogeeCurve(sway, k);
   if (style === "lantern") {
-    const [a, b] = LANTERN_STEP;
+    // A small square step on the shoulder; the neck above it is set in and
+    // eases back out to the point.
+    const a = LANTERN_JOG;
+    const b = a + LANTERN_JOG_LENGTH;
     return {
-      at: (s) => curve(s) - (s >= a && s <= b ? LANTERN_DEPTH * sway : 0),
-      breaks: [a, b],
+      at: (s) =>
+        s < b
+          ? curve(s)
+          : curve(s) - LANTERN_JOG_DEPTH * ((1 - s) / (1 - b)) ** 2,
+      breaks: [],
+      jogs: [[a, b]],
     };
   }
   if (style === "arabesque") {
@@ -215,6 +259,7 @@ function fanProfile(style: OgeeStyle, curve: OgeeCurve): Profile {
 const mirror = (p: Profile): Profile => ({
   at: (s) => p.at(1 - s),
   breaks: p.breaks.map((b) => 1 - b),
+  jogs: p.jogs?.map(([a, b]) => [1 - b, 1 - a]),
 });
 // Open at 100% scales the shape this much past touching the edges.
 const MAX_OPEN = 0.5;
@@ -236,14 +281,69 @@ function side(a: Vec, b: Vec, centre: Vec, profile: Profile): Vec[] {
   // Sample just either side of each break so steps are vertical and
   // corners are sharp rather than smeared across a sample.
   const eps = 1e-4;
+  const jogs = profile.jogs ?? [];
   const ss = [
     ...Array.from({ length: SIDE_SAMPLES + 1 }, (_, i) => i / SIDE_SAMPLES),
     ...profile.breaks.flatMap((b) => [b - eps, b + eps]),
-  ].sort((x, y) => x - y);
-  return ss.map((s) => {
+    ...jogs.flat(),
+  ]
+    .filter((s) => !jogs.some(([from, to]) => s > from && s < to))
+    .sort((x, y) => x - y);
+  const at = (s: number) => {
     const o = profile.at(s) * len;
     return { x: a.x + s * dx + nx * o, y: a.y + s * dy + ny * o };
+  };
+  return ss.flatMap((s) => {
+    const jog = jogs.find(([from]) => from === s);
+    if (!jog) return [at(s)];
+    // Join the two ends with a horizontal and a vertical segment, turning
+    // at whichever corner lies on the inner side.
+    const p = at(jog[0]);
+    const q = at(jog[1]);
+    const corners = [
+      { x: q.x, y: p.y },
+      { x: p.x, y: q.y },
+    ];
+    const d = (v: Vec) => Math.hypot(v.x - centre.x, v.y - centre.y);
+    return [p, d(corners[0]) < d(corners[1]) ? corners[0] : corners[1]];
   });
+}
+
+// Round off the corners nearest the given points: the outline within
+// `radius` of each is replaced by a curve that eases from one side into
+// the next (a quadratic curve with the corner as its control point).
+function roundCorners(poly: Vec[], corners: Vec[], radius: number): Vec[] {
+  let out = poly;
+  for (const c of corners) {
+    const n = out.length;
+    let i = 0;
+    for (let k = 1; k < n; k++) {
+      if (
+        Math.hypot(out[k].x - c.x, out[k].y - c.y) <
+        Math.hypot(out[i].x - c.x, out[i].y - c.y)
+      )
+        i = k;
+    }
+    // Start the outline away from the corner so the walk never wraps.
+    out = [...out.slice(i), ...out.slice(0, i)];
+    const far = (p: Vec) => Math.hypot(p.x - c.x, p.y - c.y) >= radius;
+    let i1 = 1;
+    while (i1 < n - 1 && !far(out[i1])) i1++;
+    let i0 = n - 1;
+    while (i0 > i1 && !far(out[i0])) i0--;
+    const p0 = out[i0];
+    const p2 = out[i1];
+    const k = out[0];
+    const curve = Array.from({ length: 15 }, (_, j) => {
+      const t = j / 14;
+      return {
+        x: (1 - t) ** 2 * p0.x + 2 * t * (1 - t) * k.x + t * t * p2.x,
+        y: (1 - t) ** 2 * p0.y + 2 * t * (1 - t) * k.y + t * t * p2.y,
+      };
+    });
+    out = [...curve, ...out.slice(i1 + 1, i0)];
+  }
+  return out;
 }
 
 const flat = (at: (s: number) => number): Profile => ({ at, breaks: [] });
@@ -367,13 +467,24 @@ function badge(curve: OgeeCurve): Vec[] {
   const tr = { x: c, y: -c };
   const br = { x: c, y: c };
   const bl = { x: -c, y: c };
+  const outline = join([
+    side(tl, tr, origin, lobes),
+    side(tr, br, origin, pointed),
+    side(br, bl, origin, lobes),
+    side(bl, tl, origin, pointed),
+  ]);
+  // Where the lobes meet the sides the outline eases round, and the dip
+  // between the two lobes is softened, so only the side points stay sharp.
+  const dips = [
+    { x: 0, y: -c },
+    { x: 0, y: c },
+  ];
   return fitUnit(
-    join([
-      side(tl, tr, origin, lobes),
-      side(tr, br, origin, pointed),
-      side(br, bl, origin, lobes),
-      side(bl, tl, origin, pointed),
-    ]),
+    roundCorners(
+      roundCorners(outline, [tl, tr, br, bl], BADGE_ROUND * c),
+      dips,
+      BADGE_DIP * c,
+    ),
   );
 }
 
@@ -489,7 +600,7 @@ export function buildShape(
       style === "fan" || style === "bat"
         ? fanProfile(style, o.ogeeCurve)
         : style
-          ? ogeeProfile(style, OGEE_SWAY[o.ogeeCurve])
+          ? ogeeProfile(style, OGEE_SWAY[o.ogeeCurve], half.x / half.y)
           : flat(() => 0);
     lt = side(L, T, centre, profile);
     tr = side(T, R, centre, mirror(profile));
