@@ -6,9 +6,6 @@ import type { TierColors } from "@/lib/colorPrefs";
 import type { PatternSettings, RepeatStyle } from "@/lib/layout/types";
 import OgeeVariantIcon from "@/components/OgeeVariantIcon";
 import {
-  PROPORTIONED_OGEES,
-  type OgeeCurve,
-  type OgeeProportion,
   type OgeeStyle,
   type ShapeFit,
   type ShapeSides,
@@ -17,7 +14,7 @@ import {
 // Repeat styles that reveal more settings when chosen.
 const MORE_OPTIONS: Partial<Record<RepeatStyle, string>> = {
   diamond: "+ side options",
-  ogee: "+ 15 shapes",
+  ogee: "+ 12 shapes",
 };
 
 const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
@@ -33,21 +30,18 @@ const REPEAT_STYLES: { value: RepeatStyle; label: string }[] = [
 ];
 
 const OGEE_STYLES: { value: OgeeStyle; label: string }[] = [
-  { value: "standard", label: "Standard" },
-  { value: "lantern", label: "Lantern" },
-  { value: "arabesque", label: "Arabesque" },
-  { value: "fan", label: "Fan" },
   { value: "bat", label: "Bat" },
-  { value: "column", label: "Column" },
-  { value: "quatrefoil", label: "Quatrefoil" },
-  { value: "steppedQuatrefoil", label: "Stepped" },
-  { value: "drop", label: "Drop" },
-  { value: "star", label: "Star" },
+  { value: "lantern", label: "Lantern" },
+  { value: "fan", label: "Fan" },
   { value: "fourPoint", label: "Four-Point" },
+  { value: "quatrefoil", label: "Quatrefoil" },
+  { value: "clover", label: "Clover" },
+  { value: "onion", label: "Onion" },
+  { value: "leaf", label: "Leaf" },
+  { value: "moroccan", label: "Moroccan" },
+  { value: "ogee", label: "Ogee" },
+  { value: "deepOgee", label: "Deep Ogee" },
   { value: "petalX", label: "Petal X" },
-  { value: "notchedSquare", label: "Notched" },
-  { value: "wavyDiamond", label: "Wavy Diamond" },
-  { value: "badge", label: "Badge" },
 ];
 
 type SetSetting = <K extends keyof PatternSettings>(
@@ -67,9 +61,6 @@ function ShapeControls({
 }) {
   const isDiamond = value.repeatStyle === "diamond";
   const isOpen = value.shapeFit === "open";
-  const hasProportion =
-    !isDiamond && PROPORTIONED_OGEES.includes(value.ogeeStyle);
-  const hasCurve = !isDiamond && value.ogeeStyle !== "column";
 
   return (
     <div className="flex flex-col gap-3">
@@ -90,41 +81,11 @@ function ShapeControls({
                     : "border-zinc-200 text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-900"
                 }`}
               >
-                <OgeeVariantIcon style={opt.value} curve={value.ogeeCurve} />
+                <OgeeVariantIcon style={opt.value} />
                 {opt.label}
               </button>
             ))}
           </div>
-          {hasProportion && (
-            <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">
-              Proportion
-              <select
-                value={value.ogeeProportion}
-                onChange={(e) =>
-                  set("ogeeProportion", e.target.value as OgeeProportion)
-                }
-                className={selectClass}
-              >
-                <option value="skinny">Skinny</option>
-                <option value="mid">Mid</option>
-                <option value="wide">Wide</option>
-              </select>
-            </label>
-          )}
-          {hasCurve && (
-            <label className="flex items-center justify-between text-sm text-zinc-700 dark:text-zinc-300">
-              Curve
-              <select
-                value={value.ogeeCurve}
-                onChange={(e) => set("ogeeCurve", e.target.value as OgeeCurve)}
-                className={selectClass}
-              >
-                <option value="subtle">Subtle</option>
-                <option value="medium">Medium</option>
-                <option value="deep">Deep</option>
-              </select>
-            </label>
-          )}
         </>
       )}
 

@@ -1,20 +1,10 @@
 import { useMemo } from "react";
-import {
-  buildShape,
-  type OgeeCurve,
-  type OgeeStyle,
-} from "@/lib/shapes/shapes";
+import { buildShape, type OgeeStyle } from "@/lib/shapes/shapes";
 import { polygonPoints } from "@/lib/shapes/polygon";
 
 const SIZE = 40;
 
-export default function OgeeVariantIcon({
-  style,
-  curve,
-}: {
-  style: OgeeStyle;
-  curve: OgeeCurve;
-}) {
+export default function OgeeVariantIcon({ style }: { style: OgeeStyle }) {
   const points = useMemo(() => {
     const shape = buildShape(
       {
@@ -22,8 +12,6 @@ export default function OgeeVariantIcon({
         sides: "straight",
         fit: "closed",
         ogeeStyle: style,
-        ogeeCurve: curve,
-        ogeeProportion: "mid",
         openAmount: 0,
         innerCount: 0,
         innerSpacing: 0,
@@ -31,14 +19,8 @@ export default function OgeeVariantIcon({
       SIZE,
       SIZE,
     );
-    // Clip to the icon box (a column runs past its top and bottom).
-    return polygonPoints(
-      shape.copies[0].map((p) => ({
-        x: p.x,
-        y: Math.max(0, Math.min(SIZE, p.y)),
-      })),
-    );
-  }, [style, curve]);
+    return polygonPoints(shape.copies[0]);
+  }, [style]);
 
   return (
     <svg

@@ -7,27 +7,24 @@ import { signedDistance } from "../src/lib/shapes/polygon";
 const W = 3600,
   H = 3600;
 const styles: OgeeStyle[] = [
-  "standard",
-  "lantern",
-  "arabesque",
-  "fan",
   "bat",
-  "column",
-  "quatrefoil",
-  "steppedQuatrefoil",
-  "drop",
-  "star",
+  "lantern",
+  "fan",
   "fourPoint",
+  "quatrefoil",
+  "clover",
+  "onion",
+  "leaf",
+  "moroccan",
+  "ogee",
+  "deepOgee",
   "petalX",
-  "notchedSquare",
-  "wavyDiamond",
-  "badge",
 ];
 let bad = 0;
 const t0 = Date.now();
 for (const [kind, st] of [
   ...styles.map((s) => ["ogee", s] as const),
-  ["diamond", "standard"] as const,
+  ["diamond", "ogee"] as const,
 ])
   for (const fit of ["closed", "open"] as const) {
     const shape = buildShape(
@@ -36,8 +33,6 @@ for (const [kind, st] of [
         sides: "straight",
         fit,
         ogeeStyle: st,
-        ogeeCurve: "medium",
-        ogeeProportion: "mid",
         openAmount: 25,
         innerCount: 0,
         innerSpacing: 0.08,

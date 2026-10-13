@@ -1,8 +1,6 @@
 // Five fixed sizes. Extra large and extra small are optional (count 0 = off).
 export type ElementClass = "xl" | "hero" | "secondary" | "filler" | "xs";
 import type {
-  OgeeCurve,
-  OgeeProportion,
   OgeeStyle,
   ShapeFit,
   ShapeModel,
@@ -80,8 +78,6 @@ export interface PatternSettings {
   diamondSides: ShapeSides;
   shapeFit: ShapeFit;
   ogeeStyle: OgeeStyle;
-  ogeeCurve: OgeeCurve;
-  ogeeProportion: OgeeProportion;
   outlinePx: number;
   openAmount: number;
   innerCount: number;

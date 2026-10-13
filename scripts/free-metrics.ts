@@ -10,7 +10,13 @@ import { torusDistance } from "../src/lib/layout/geometry";
 
 const W = 3600,
   H = 3600;
-const styles: OgeeStyle[] = ["standard", "lantern", "quatrefoil", "star", "badge"];
+const styles: OgeeStyle[] = [
+  "ogee",
+  "lantern",
+  "quatrefoil",
+  "clover",
+  "moroccan",
+];
 
 type El = { x: number; y: number; radius: number };
 
@@ -67,7 +73,7 @@ const seeds = [1, 2, 3, 4];
 for (const density of [0.35, 0.5, 0.7]) {
   for (const [kind, st] of [
     ...styles.map((s) => ["ogee", s] as const),
-    ["diamond", "standard"] as const,
+    ["diamond", "ogee"] as const,
   ]) {
     const shape = buildShape(
       {
@@ -75,8 +81,6 @@ for (const density of [0.35, 0.5, 0.7]) {
         sides: "straight",
         fit: "closed",
         ogeeStyle: st,
-        ogeeCurve: "medium",
-        ogeeProportion: "mid",
         openAmount: 25,
         innerCount: 0,
         innerSpacing: 0.08,
@@ -101,7 +105,11 @@ for (const density of [0.35, 0.5, 0.7]) {
         filler: { count: 4, color: "" },
         shape,
       });
-      add(`${kind}/${st} d=${density}`, score(elements, dom.dist, inside), seeds.length);
+      add(
+        `${kind}/${st} d=${density}`,
+        score(elements, dom.dist, inside),
+        seeds.length,
+      );
     }
   }
   const d = torusDistance(W, H);
@@ -116,7 +124,11 @@ for (const density of [0.35, 0.5, 0.7]) {
       secondary: { count: 3, color: "" },
       filler: { count: 4, color: "" },
     });
-    add(`mirror d=${density}`, score(elements, d, () => Infinity), seeds.length);
+    add(
+      `mirror d=${density}`,
+      score(elements, d, () => Infinity),
+      seeds.length,
+    );
   }
 }
 let cvAll = 0,
